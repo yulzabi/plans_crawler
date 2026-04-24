@@ -1,0 +1,27 @@
+# PDFs and crawl state (large / local only)
+data/pdfs/
+data/state.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Planning docs (PDD artifacts, not needed in repo)
+research/
+design/
+implementation/
+rough-idea.md
+idea-honing.md
+summary.md
+verify.py

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>היתרי בנייה נס ציונה</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f7fa;color:#1a1a2e;direction:rtl}
+.container{max-width:1200px;margin:0 auto;padding:16px}
+header{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:24px 0;margin-bottom:24px}
+header h1{font-size:1.6em;margin-bottom:4px}
+header p{opacity:.7;font-size:.9em}
+.controls{background:#fff;border-radius:8px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.search-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.search-row input{flex:1;min-width:200px;padding:10px 14px;border:1px solid #ddd;border-radius:6px;font-size:1em}
+.search-row input:focus{outline:none;border-color:#4361ee}
+.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.filters label{font-size:.85em;color:#555}
+.filters select{padding:6px 10px;border:1px solid #ddd;border-radius:4px;font-size:.9em}
+.stats{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.stat{background:#fff;border-radius:8px;padding:14px 20px;box-shadow:0 1px 3px rgba(0,0,0,.1);text-align:center;min-width:120px}
+.stat .num{font-size:1.8em;font-weight:700;color:#4361ee}
+.stat .label{font-size:.8em;color:#666;margin-top:2px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+th{background:#f0f2f5;padding:10px 12px;text-align:right;font-size:.85em;color:#555;cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{background:#e2e6ea}
+th .arrow{margin-right:4px;font-size:.7em}
+td{padding:10px 12px;border-top:1px solid #eee;font-size:.9em}
+tr:hover td{background:#f8f9ff}
+td a{color:#4361ee;text-decoration:none}
+td a:hover{text-decoration:underline}
+.pagination{display:flex;justify-content:center;gap:4px;margin-top:16px;flex-wrap:wrap}
+.pagination button{padding:6px 12px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:.85em}
+.pagination button.active{background:#4361ee;color:#fff;border-color:#4361ee}
+.pagination button:hover:not(.active){background:#f0f2f5}
+.empty{text-align:center;padding:40px;color:#999}
+.loading{text-align:center;padding:60px;color:#999;font-size:1.1em}
+@media(max-width:600px){.search-row input{min-width:100%}.filters{flex-direction:column}.stats{flex-direction:column}}
+</style>
+</head>
+<body>
+<header><div class="container"><h1>🏗 היתרי בנייה — נס ציונה</h1><p>נתוני היתרי בנייה מארכיב תיקי הבניין העירוני</p></div></header>
+<div class="container">
+<div class="controls">
+  <div class="search-row">
+    <input type="text" id="search" placeholder="חיפוש לפי כתובת, בעלים, או אדריכל..." autocomplete="off">
+  </div>
+  <div class="filters">
+    <label>שנה מ: <select id="yearFrom"></select></label>
+    <label>עד: <select id="yearTo"></select></label>
+    <label>גוש: <select id="gushFilter"><option value="">הכל</option></select></label>
+    <label>
+      <input type="checkbox" id="missingOnly"> הצג רק רשומות עם נתונים חסרים
+    </label>
+  </div>
+</div>
+<div class="stats" id="stats"></div>
+<table>
+  <thead><tr id="thead"></tr></thead>
+  <tbody id="tbody"></tbody>
+</table>
+<div class="pagination" id="pagination"></div>
+</div>
+<div class="loading" id="loading">טוען נתונים...</div>
+
+<script>
+const COLS = [
+  {key:'address',label:'כתובת',w:1},
+  {key:'owner',label:'בעל היתר',w:1},
+  {key:'architect',label:'אדריכל',w:1},
+  {key:'gush',label:'גוש',w:0},
+  {key:'helka',label:'חלקה',w:0},
+  {key:'date',label:'תאריך',w:0},
+  {key:'building_file_number',label:'תיק',w:0},
+  {key:'permit_number',label:'מס׳ היתר',w:0},
+];
+const PER_PAGE = 50;
+let allRows = [], filtered = [], sortCol = 'address', sortAsc = true, page = 0;
+
+// Parse CSV (handles quoted fields)
+function parseCSV(text) {
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = parseLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = parseLine(line);
+    const obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+    return obj;
+  });
+}
+function parseLine(line) {
+  const result = []; let cur = '', inQ = false;
+  for (const ch of line) {
+    if (ch === '"') { inQ = !inQ; }
+    else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
+    else { cur += ch; }
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseYear(dateStr) {
+  if (!dateStr) return 0;
+  const parts = dateStr.split('/');
+  return parseInt(parts[parts.length - 1]) || 0;
+}
+
+function initFilters() {
+  const years = new Set(), gushes = new Set();
+  allRows.forEach(r => {
+    const y = parseYear(r.date);
+    if (y >= 2000 && y <= 2030) years.add(y);
+    if (r.gush) gushes.add(r.gush);
+  });
+  const sortedYears = [...years].sort();
+  const yFrom = document.getElementById('yearFrom');
+  const yTo = document.getElementById('yearTo');
+  yFrom.innerHTML = '<option value="">הכל</option>' + sortedYears.map(y => `<option value="${y}">${y}</option>`).join('');
+  yTo.innerHTML = '<option value="">הכל</option>' + sortedYears.map(y => `<option value="${y}">${y}</option>`).join('');
+  const gf = document.getElementById('gushFilter');
+  [...gushes].sort((a,b) => a-b).forEach(g => gf.innerHTML += `<option value="${g}">${g}</option>`);
+}
+
+function applyFilters() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const yf = parseInt(document.getElementById('yearFrom').value) || 0;
+  const yt = parseInt(document.getElementById('yearTo').value) || 9999;
+  const gush = document.getElementById('gushFilter').value;
+  const missing = document.getElementById('missingOnly').checked;
+
+  filtered = allRows.filter(r => {
+    if (q && !COLS.some(c => (r[c.key]||'').toLowerCase().includes(q))) return false;
+    const y = parseYear(r.date);
+    if (yf && y < yf) return false;
+    if (yt < 9999 && y > yt) return false;
+    if (gush && r.gush !== gush) return false;
+    if (missing && r.owner && r.architect) return false;
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    let va = a[sortCol] || '', vb = b[sortCol] || '';
+    if (sortCol === 'date') { va = parseYear(va); vb = parseYear(vb); }
+    if (sortCol === 'gush' || sortCol === 'helka') { va = parseInt(va)||0; vb = parseInt(vb)||0; }
+    if (va < vb) return sortAsc ? -1 : 1;
+    if (va > vb) return sortAsc ? 1 : -1;
+    return 0;
+  });
+
+  page = 0;
+  renderStats();
+  renderTable();
+  renderPagination();
+}
+
+function renderStats() {
+  const architects = new Set(filtered.map(r => r.architect).filter(Boolean));
+  const gushes = new Set(filtered.map(r => r.gush).filter(Boolean));
+  const missingCount = filtered.filter(r => !r.owner || !r.architect).length;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="num">${filtered.length}</div><div class="label">היתרים</div></div>
+    <div class="stat"><div class="num">${architects.size}</div><div class="label">אדריכלים</div></div>
+    <div class="stat"><div class="num">${gushes.size}</div><div class="label">גושים</div></div>
+    <div class="stat"><div class="num">${missingCount}</div><div class="label">חסרי נתונים</div></div>
+  `;
+}
+
+function renderTable() {
+  // Header
+  document.getElementById('thead').innerHTML = COLS.map(c => {
+    const arrow = sortCol === c.key ? (sortAsc ? '▲' : '▼') : '';
+    return `<th data-col="${c.key}"><span class="arrow">${arrow}</span>${c.label}</th>`;
+  }).join('') + '<th>קישור</th>';
+
+  // Body
+  const start = page * PER_PAGE;
+  const rows = filtered.slice(start, start + PER_PAGE);
+  if (!rows.length) {
+    document.getElementById('tbody').innerHTML = '<tr><td colspan="99" class="empty">לא נמצאו תוצאות</td></tr>';
+    return;
+  }
+  document.getElementById('tbody').innerHTML = rows.map(r => {
+    const portalUrl = r.building_file_number
+      ? `https://nes.bartech-net.co.il/BuildingArchiveDetails?OrgEntityNumber=${r.building_file_number}&pageId=8575&DefinementEntityType=10&BuildingNum=${r.building_file_number}`
+      : '';
+    const cells = COLS.map(c => {
+      const v = r[c.key] || '';
+      const cls = (!v && (c.key === 'owner' || c.key === 'architect')) ? ' style="color:#ccc"' : '';
+      return `<td${cls}>${v || '—'}</td>`;
+    }).join('');
+    const link = portalUrl ? `<td><a href="${portalUrl}" target="_blank">📄 ארכיב</a></td>` : '<td></td>';
+    return `<tr>${cells}${link}</tr>`;
+  }).join('');
+}
+
+function renderPagination() {
+  const total = Math.ceil(filtered.length / PER_PAGE);
+  if (total <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
+  let html = '';
+  const range = 3;
+  if (page > 0) html += `<button data-p="${page-1}">→</button>`;
+  for (let i = 0; i < total; i++) {
+    if (i === 0 || i === total-1 || Math.abs(i - page) <= range) {
+      html += `<button data-p="${i}" class="${i===page?'active':''}">${i+1}</button>`;
+    } else if (Math.abs(i - page) === range+1) {
+      html += `<button disabled>...</button>`;
+    }
+  }
+  if (page < total-1) html += `<button data-p="${page+1}">←</button>`;
+  document.getElementById('pagination').innerHTML = html;
+}
+
+// Events
+document.getElementById('search').addEventListener('input', debounce(applyFilters, 300));
+document.getElementById('yearFrom').addEventListener('change', applyFilters);
+document.getElementById('yearTo').addEventListener('change', applyFilters);
+document.getElementById('gushFilter').addEventListener('change', applyFilters);
+document.getElementById('missingOnly').addEventListener('change', applyFilters);
+
+document.getElementById('thead').addEventListener('click', e => {
+  const th = e.target.closest('th');
+  if (!th || !th.dataset.col) return;
+  if (sortCol === th.dataset.col) sortAsc = !sortAsc;
+  else { sortCol = th.dataset.col; sortAsc = true; }
+  applyFilters();
+});
+
+document.getElementById('pagination').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || btn.disabled || btn.dataset.p === undefined) return;
+  page = parseInt(btn.dataset.p);
+  renderTable();
+  renderPagination();
+  window.scrollTo({top: 0, behavior: 'smooth'});
+});
+
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+// Load CSV
+fetch('data/output.csv')
+  .then(r => r.text())
+  .then(text => {
+    document.getElementById('loading').style.display = 'none';
+    allRows = parseCSV(text);
+    initFilters();
+    applyFilters();
+  })
+  .catch(err => {
+    document.getElementById('loading').textContent = 'שגיאה בטעינת הנתונים: ' + err.message;
+  });
+</script>
+</body>
+</html>
