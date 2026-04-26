@@ -3,6 +3,7 @@ import asyncio
 import re
 import signal
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from PIL import Image
 
@@ -15,8 +16,8 @@ from src.csv_writer import append_record, write_header, CSV_PATH
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 PDF_DIR = DATA_DIR / "pdfs"
+OCR_WORKERS = 4
 
-# Graceful shutdown flag
 _shutdown = False
 
 
@@ -26,7 +27,7 @@ def _handle_sigint(sig, frame):
         print("\n⚡ Force quit")
         sys.exit(1)
     _shutdown = True
-    print("\n🛑 Shutting down gracefully after current file... (Ctrl+C again to force)")
+    print("\n🛑 Shutting down gracefully... (Ctrl+C again to force)")
 
 
 signal.signal(signal.SIGINT, _handle_sigint)
@@ -37,6 +38,25 @@ def sanitize_dirname(address: str) -> str:
     return re.sub(r"\s+", "_", name)
 
 
+def _ocr_one(args: tuple) -> dict | None:
+    """Worker function for parallel OCR. Runs in a subprocess."""
+    from PIL import Image as _Img
+    _Img.MAX_IMAGE_PIXELS = 500_000_000
+    pdf_path, file_id, address, date = args
+    try:
+        from src.pdf_processor import process_pdf as _process
+        record = _process(pdf_path)
+        if record:
+            record.building_file_number = file_id
+            record.date = date
+            if not record.address:
+                record.address = address
+            return record.__dict__
+    except Exception as e:
+        return {"_error": str(e), "pdf_path": pdf_path}
+    return None
+
+
 async def crawl(retry_errors: bool = False):
     global _shutdown
     state = StateManager()
@@ -45,9 +65,9 @@ async def crawl(retry_errors: bool = False):
     try:
         await bc.launch()
 
-        # Phase 1: Collect all building file links
+        # Phase 1: Collect file list
         if state.phase == "collecting_files":
-            print("📋 Phase 1: Collecting building file list...")
+            print("📋 Collecting building file list...")
             await bc.navigate_to_search()
             await bc.perform_search()
             results = await bc.get_results_list()
@@ -57,103 +77,154 @@ async def crawl(retry_errors: bool = False):
             state.save()
             print(f"✓ Collected {len(results)} building files")
 
-        # Reset error files if retrying
         if retry_errors:
             for fid, entry in state.get_error_files():
                 entry.status = "pending"
                 entry.error = None
             state.save()
-            print(f"♻ Reset {len(state.get_error_files())} error files for retry")
 
-        # Phase 2: Process each building file
-        if state.phase in ("processing_files", "done"):
-            if state.phase == "done" and not retry_errors:
-                print("✓ Already complete. Use --retry-errors to reprocess failures.")
-                return
-            state.phase = "processing_files"
+        # Phase 2: Download + OCR in parallel
+        unprocessed = state.get_unprocessed_files()
+        already_downloaded = state.get_downloaded_files()
+        total = len(state.files)
+        remaining = len(unprocessed) + len(already_downloaded)
 
-            if not CSV_PATH.exists():
-                write_header()
+        if remaining == 0 and not retry_errors:
+            print("✓ Already complete. Use --retry-errors to reprocess failures.")
+            return
 
-            unprocessed = state.get_unprocessed_files()
-            total = len(state.files)
-            done = total - len(unprocessed)
-            print(f"\n📄 Phase 2: Processing files ({done}/{total} done, {len(unprocessed)} remaining)")
+        if not CSV_PATH.exists():
+            write_header()
 
-            for file_id, entry in unprocessed:
-                if _shutdown:
-                    print(f"\n🛑 Stopped. Progress saved. Run again to resume.")
-                    return
+        print(f"\n🚀 Processing: {remaining} files ({OCR_WORKERS} OCR workers)")
+
+        # OCR queue: feed downloaded PDFs here, workers pick them up
+        ocr_queue = asyncio.Queue()
+        ocr_done = asyncio.Event()
+        loop = asyncio.get_event_loop()
+        pool = ProcessPoolExecutor(max_workers=OCR_WORKERS)
+        csv_lock = asyncio.Lock()
+        ocr_count = [0]
+
+        # Enqueue already-downloaded files from previous interrupted run
+        for file_id, entry in already_downloaded:
+            for i, pdf in enumerate(entry.pdfs):
+                date = entry.doc_meta[i]["date"] if i < len(entry.doc_meta) else ""
+                await ocr_queue.put((pdf, file_id, entry.address, date))
+
+        async def ocr_consumer():
+            """Consume OCR queue, run in process pool, write to CSV."""
+            from src.pdf_processor import PermitRecord
+            while True:
+                try:
+                    item = await asyncio.wait_for(ocr_queue.get(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    if ocr_done.is_set() and ocr_queue.empty():
+                        break
+                    continue
 
                 try:
-                    print(f"\n[{done+1}/{total}] File {file_id}: {entry.address}")
-                    await bc.navigate_to_file(entry.url)
-                    docs = await bc.get_pdf_links()
-
-                    # Filter for building permits from 2000 onwards
-                    permits = []
-                    for d in docs:
-                        if "היתר בניה" not in d.get("doc_type", ""):
-                            continue
-                        try:
-                            year = int(d.get("date", "").split("/")[-1])
-                            if year < 2000:
-                                continue
-                        except (ValueError, IndexError):
-                            pass
-                        permits.append(d)
-
-                    if not permits:
-                        state.mark_file_skipped(file_id)
-                        done += 1
-                        continue
-
-                    pdf_paths = []
-                    for doc_info in permits:
-                        try:
-                            dirname = sanitize_dirname(entry.address) or f"file_{file_id}"
-                            nf = doc_info["url"].split("Name_File=")[1].split("&")[0]
-                            filename = f"permit_{doc_info.get('entity_number') or nf}.pdf"
-                            dest = PDF_DIR / dirname / filename
-                            dest.parent.mkdir(parents=True, exist_ok=True)
-
-                            print(f"  ⬇ {filename}...", end=" ", flush=True)
-                            await bc.download_pdf(doc_info["url"], str(dest))
-                            pdf_paths.append(str(dest))
-
-                            record = process_pdf(str(dest))
-                            if record:
-                                record.building_file_number = file_id
-                                record.date = doc_info.get("date", "")
-                                if not record.address:
-                                    record.address = entry.address
-                                append_record(record)
-                                print(f"✓ gush={record.gush} addr={record.address[:30]}")
-                            else:
-                                print("⚠ not a permit")
-                        except Exception as pdf_err:
-                            print(f"⚠ {pdf_err}")
-
-                    state.mark_file_processed(file_id, pdf_paths)
-                    done += 1
-
+                    result = await loop.run_in_executor(pool, _ocr_one, item)
+                    if result and "_error" not in result:
+                        record = PermitRecord(**{k: v for k, v in result.items() if k in PermitRecord.__dataclass_fields__})
+                        async with csv_lock:
+                            append_record(record)
+                        ocr_count[0] += 1
                 except Exception as e:
-                    print(f"  ✗ Error: {e}")
-                    state.mark_file_error(file_id, str(e))
-                    done += 1
+                    print(f"  ⚠ OCR: {e}")
+                finally:
+                    ocr_queue.task_done()
 
-            if not _shutdown:
-                state.phase = "done"
-                state.save()
+        # Start OCR consumers
+        consumers = [asyncio.create_task(ocr_consumer()) for _ in range(OCR_WORKERS)]
 
-        # Summary
+        # Download loop (sequential browser navigation)
+        done = total - remaining
+        for file_id, entry in unprocessed:
+            if _shutdown:
+                print(f"\n🛑 Stopped. Run again to resume.")
+                break
+
+            try:
+                done += 1
+                print(f"[{done}/{total}] {file_id}: {entry.address}", end=" ", flush=True)
+                await bc.navigate_to_file(entry.url)
+                docs = await bc.get_pdf_links()
+
+                permits = []
+                for d in docs:
+                    if "היתר בניה" not in d.get("doc_type", ""):
+                        continue
+                    try:
+                        year = int(d.get("date", "").split("/")[-1])
+                        if year < 2000:
+                            continue
+                    except (ValueError, IndexError):
+                        pass
+                    permits.append(d)
+
+                if not permits:
+                    state.mark_file_skipped(file_id)
+                    print("⏭")
+                    continue
+
+                pdf_paths = []
+                meta = []
+                for doc_info in permits:
+                    try:
+                        dirname = sanitize_dirname(entry.address) or f"file_{file_id}"
+                        nf = doc_info["url"].split("Name_File=")[1].split("&")[0]
+                        filename = f"permit_{doc_info.get('entity_number') or nf}.pdf"
+                        dest = PDF_DIR / dirname / filename
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        await bc.download_pdf(doc_info["url"], str(dest))
+                        pdf_paths.append(str(dest))
+                        dm = {"date": doc_info.get("date", ""), "entity_number": doc_info.get("entity_number", "")}
+                        meta.append(dm)
+                        # Feed to OCR queue immediately
+                        await ocr_queue.put((str(dest), file_id, entry.address, dm["date"]))
+                    except Exception as e:
+                        print(f"⚠dl:{e}", end=" ")
+
+                if pdf_paths:
+                    state.mark_file_downloaded(file_id, pdf_paths, meta)
+                    print(f"✓ {len(pdf_paths)} PDFs (OCR queue: ~{ocr_queue.qsize()})")
+                else:
+                    state.mark_file_skipped(file_id)
+                    print("⏭")
+
+            except Exception as e:
+                print(f"✗ {e}")
+                state.mark_file_error(file_id, str(e))
+
+        # Signal OCR consumers to finish
+        ocr_done.set()
+        await bc.close()
+        bc = None
+
+        # Wait for OCR to drain
+        if not ocr_queue.empty():
+            print(f"\n⏳ Waiting for OCR to finish ({ocr_queue.qsize()} remaining)...")
+        for c in consumers:
+            await c
+        pool.shutdown()
+
+        # Mark all downloaded as processed
+        for file_id, entry in state.get_downloaded_files():
+            state.mark_file_processed(file_id, entry.pdfs)
+
+        if not _shutdown:
+            state.phase = "done"
+        state.save()
+
         progress = state.get_progress()
         print(f"\n{'='*50}")
         print(f"Done! {progress}")
-        print(f"CSV: {CSV_PATH}")
+        print(f"CSV: {CSV_PATH} ({ocr_count[0]} records written)")
 
     finally:
-        await bc.close()
+        if bc:
+            await bc.close()
 
 
 def show_status():
@@ -177,7 +248,6 @@ def fix_missing():
         print("No CSV data found.")
         return
 
-    # Find rows with missing key fields
     to_fix = [(i, r) for i, r in enumerate(rows) if not r.get("owner") or not r.get("architect")]
     print(f"Found {len(to_fix)} records with missing owner/architect out of {len(rows)} total.\n")
 
@@ -189,14 +259,12 @@ def fix_missing():
         print(f"  Current: owner={row.get('owner','')!r}, architect={row.get('architect','')!r}")
 
         if pdf and Path(pdf).exists():
-            # Open PDF in default viewer
             subprocess.Popen(["open", pdf], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print(f"  📄 Opened: {pdf}")
         else:
             print(f"  ⚠ PDF not found: {pdf}")
 
-        print("  Fill in missing fields (press Enter to skip, 'q' to quit):")
-
+        print("  Fill in missing fields (Enter to skip, 'q' to quit):")
         for field in COLUMNS:
             current = row.get(field, "")
             if current and field not in ("owner", "architect", "structural_planner"):
@@ -210,7 +278,6 @@ def fix_missing():
                 return
             if val:
                 rows[idx][field] = val
-
         fixed += 1
         print()
 
@@ -238,72 +305,11 @@ async def update():
             return
 
         print(f"Found {len(new_entries)} new files (was {len(existing_ids)}, now {len(results)})")
-
         for r in new_entries:
             state.mark_file_listed(r["file_id"], url=r["url"], address=r["address"])
-        state.phase = "processing_files"
+        state.phase = "downloading"
         state.save()
-
-        # Process only the new ones
-        if not CSV_PATH.exists():
-            write_header()
-
-        for file_id, entry in [(r["file_id"], state.files[r["file_id"]]) for r in new_entries]:
-            if _shutdown:
-                print(f"\n🛑 Stopped. Progress saved.")
-                return
-
-            try:
-                print(f"\n  New file {file_id}: {entry.address}")
-                await bc.navigate_to_file(entry.url)
-                docs = await bc.get_pdf_links()
-
-                permits = []
-                for d in docs:
-                    if "היתר בניה" not in d.get("doc_type", ""):
-                        continue
-                    try:
-                        year = int(d.get("date", "").split("/")[-1])
-                        if year < 2000:
-                            continue
-                    except (ValueError, IndexError):
-                        pass
-                    permits.append(d)
-
-                if not permits:
-                    state.mark_file_skipped(file_id)
-                    continue
-
-                pdf_paths = []
-                for doc_info in permits:
-                    try:
-                        dirname = sanitize_dirname(entry.address) or f"file_{file_id}"
-                        nf = doc_info["url"].split("Name_File=")[1].split("&")[0]
-                        filename = f"permit_{doc_info.get('entity_number') or nf}.pdf"
-                        dest = PDF_DIR / dirname / filename
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-
-                        await bc.download_pdf(doc_info["url"], str(dest))
-                        pdf_paths.append(str(dest))
-
-                        record = process_pdf(str(dest))
-                        if record:
-                            record.building_file_number = file_id
-                            record.date = doc_info.get("date", "")
-                            if not record.address:
-                                record.address = entry.address
-                            append_record(record)
-                            print(f"  ✓ {record.address}")
-                    except Exception as e:
-                        print(f"  ⚠ {e}")
-
-                state.mark_file_processed(file_id, pdf_paths)
-
-            except Exception as e:
-                print(f"  ✗ {e}")
-                state.mark_file_error(file_id, str(e))
-
-        print(f"\n✓ Update complete. Processed {len(new_entries)} new files.")
+        print("Run 'python -m src.main' to process them.")
 
     finally:
         await bc.close()

@@ -11,8 +11,9 @@ STATE_FILE = Path(__file__).parent.parent / "data" / "state.json"
 class FileEntry:
     url: str = ""
     address: str = ""
-    status: str = "pending"  # pending | processed | skipped | error
+    status: str = "pending"  # pending | downloaded | processed | skipped | error
     pdfs: list[str] = field(default_factory=list)
+    doc_meta: list[dict] = field(default_factory=list)  # [{url, date, entity_number}, ...]
     error: str | None = None
 
 
@@ -54,6 +55,13 @@ class StateManager:
                 self.files[file_id].pdfs = pdfs
             self.save()
 
+    def mark_file_downloaded(self, file_id: str, pdfs: list[str], doc_meta: list[dict]):
+        if file_id in self.files:
+            self.files[file_id].status = "downloaded"
+            self.files[file_id].pdfs = pdfs
+            self.files[file_id].doc_meta = doc_meta
+            self.save()
+
     def mark_file_error(self, file_id: str, error: str):
         if file_id in self.files:
             self.files[file_id].status = "error"
@@ -67,6 +75,9 @@ class StateManager:
 
     def get_unprocessed_files(self) -> list[tuple[str, FileEntry]]:
         return [(fid, f) for fid, f in self.files.items() if f.status == "pending"]
+
+    def get_downloaded_files(self) -> list[tuple[str, FileEntry]]:
+        return [(fid, f) for fid, f in self.files.items() if f.status == "downloaded"]
 
     def get_error_files(self) -> list[tuple[str, FileEntry]]:
         return [(fid, f) for fid, f in self.files.items() if f.status == "error"]
