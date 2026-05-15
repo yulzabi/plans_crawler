@@ -62,6 +62,7 @@
       <select id="yearTo" class="border border-slate-200 rounded-md px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary-500/20"></select>
     </div>
     <select id="gushFilter" class="border border-slate-200 rounded-md px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary-500/20"><option value="">כל הגושים</option></select>
+    <select id="cityFilter" class="border border-slate-200 rounded-md px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary-500/20"><option value="">כל הערים</option></select>
     <div class="relative" id="streetCombo">
       <input id="streetSearch" type="text" placeholder="רחוב..." class="border border-slate-200 rounded-md px-2 py-1.5 text-xs w-28 focus:w-40 transition-all focus:ring-2 focus:ring-primary-500/20" autocomplete="off">
       <input id="streetFilter" type="hidden" value="">
@@ -168,17 +169,19 @@ function isPrivateHouse(r){
 function clean(v){return(!v||isGarbage(v))?'':v}
 
 function initFilters(){
-  const years=new Set(),gushes=new Set(),streets=new Set(),architects=new Set();
+  const years=new Set(),gushes=new Set(),streets=new Set(),architects=new Set(),cities=new Set();
   allRows.forEach(r=>{
     const y=parseYear(r.date);if(y>=2000&&y<=2030)years.add(y);
     if(r.gush&&/^\d+$/.test(r.gush))gushes.add(r.gush);
     const s=extractStreet(r.address);if(s&&s.length>2)streets.add(s);
     const a=clean(r.architect);if(a)architects.add(a);
+    if(r.city)cities.add(r.city);
   });
   const sy=[...years].sort();
   document.getElementById('yearFrom').innerHTML='<option value="">הכל</option>'+sy.map(y=>`<option value="${y}">${y}</option>`).join('');
   document.getElementById('yearTo').innerHTML='<option value="">הכל</option>'+[...sy].reverse().map(y=>`<option value="${y}">${y}</option>`).join('');
   [...gushes].sort((a,b)=>a-b).forEach(g=>document.getElementById('gushFilter').innerHTML+=`<option value="${g}">${g}</option>`);
+  [...cities].sort().forEach(c=>document.getElementById('cityFilter').innerHTML+=`<option value="${c}">${c}</option>`);
   allStreets=[...streets].sort();
   allArchitects=[...architects].sort();
 }
@@ -188,6 +191,7 @@ function applyFilters(){
   const yf=parseInt(document.getElementById('yearFrom').value)||0;
   const yt=parseInt(document.getElementById('yearTo').value)||9999;
   const gush=document.getElementById('gushFilter').value;
+  const cityF=document.getElementById('cityFilter').value;
   const street=document.getElementById('streetFilter').value;
   const arch=document.getElementById('architectFilter').value;
   const missing=document.getElementById('missingOnly').checked;
@@ -198,6 +202,7 @@ function applyFilters(){
     if(q&&!Object.values(r).some(v=>(v||'').toLowerCase().includes(q)))return false;
     const y=parseYear(r.date);if(yf&&y<yf)return false;if(yt<9999&&y>yt)return false;
     if(gush&&r.gush!==gush)return false;
+    if(cityF&&r.city!==cityF)return false;
     if(street&&!extractStreet(r.address).includes(street))return false;
     if(arch&&clean(r.architect)!==arch)return false;
     if(missing&&clean(r.owner)&&clean(r.architect))return false;
@@ -322,7 +327,7 @@ function exportCSV(){const h=COLS.map(c=>c.label).join(',');const rows=filtered.
 
 // Events
 document.getElementById('search').addEventListener('input',debounce(applyFilters,300));
-['yearFrom','yearTo','gushFilter'].forEach(id=>document.getElementById(id).addEventListener('change',applyFilters));
+['yearFrom','yearTo','gushFilter','cityFilter'].forEach(id=>document.getElementById(id).addEventListener('change',applyFilters));
 ['missingOnly','groupByAddress','privateOnly'].forEach(id=>document.getElementById(id).addEventListener('change',applyFilters));
 document.getElementById('exportBtn').addEventListener('click',exportCSV);
 document.getElementById('thead').addEventListener('click',e=>{const th=e.target.closest('th');if(!th||!th.dataset.col)return;if(sortCol===th.dataset.col)sortAsc=!sortAsc;else{sortCol=th.dataset.col;sortAsc=true}applyFilters()});
@@ -355,10 +360,13 @@ document.getElementById('archChart').addEventListener('click',e=>{
 
 function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}}
 
-// Init
-fetch('data/nes/output.csv').then(r=>r.text()).then(text=>{
+// Init — load all city CSVs
+fetch('cities.csv').then(r=>r.text()).then(citiesTxt=>{
+  const cities=citiesTxt.split('\n').filter(l=>l.trim()&&!l.startsWith('#')).map(l=>l.split(',')[0]);
+  return Promise.all(cities.map(c=>fetch(`data/${c}/output.csv`).then(r=>r.ok?r.text():'').catch(()=>'')));
+}).then(texts=>{
   document.getElementById('loading').classList.add('hidden');
-  allRows=parseCSV(text);
+  allRows=texts.flatMap(t=>t?parseCSV(t):[]);
   initFilters();
   setupCombo('streetSearch','streetFilter','streetDropdown',allStreets);
   setupCombo('archSearch','architectFilter','archDropdown',allArchitects);
