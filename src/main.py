@@ -106,11 +106,26 @@ async def crawl(retry_errors: bool = False):
         csv_lock = asyncio.Lock()
         ocr_count = [0]
 
+        # Load existing CSV to know which PDFs already have results
+        from src.csv_writer import read_all
+        existing_pdfs = {r.get("pdf_path") for r in read_all() if r.get("pdf_path")}
+
+        async def queue_if_needed(pdf_path, file_id, address, date):
+            """Only queue for OCR if not already in CSV."""
+            if pdf_path not in existing_pdfs:
+                await ocr_queue.put((pdf_path, file_id, address, date))
+
         # Enqueue already-downloaded files from previous interrupted run
-        for file_id, entry in already_downloaded:
-            for i, pdf in enumerate(entry.pdfs):
-                date = entry.doc_meta[i]["date"] if i < len(entry.doc_meta) else ""
-                await ocr_queue.put((pdf, file_id, entry.address, date))
+        if already_downloaded:
+            queued = 0
+            for file_id, entry in already_downloaded:
+                for i, pdf in enumerate(entry.pdfs):
+                    date = entry.doc_meta[i]["date"] if i < len(entry.doc_meta) else ""
+                    if pdf not in existing_pdfs:
+                        await ocr_queue.put((pdf, file_id, entry.address, date))
+                        queued += 1
+            if queued:
+                print(f"  ↻ {queued} PDFs from previous run need OCR")
 
         async def ocr_consumer():
             """Consume OCR queue, run in process pool, write to CSV."""
@@ -129,6 +144,7 @@ async def crawl(retry_errors: bool = False):
                         record = PermitRecord(**{k: v for k, v in result.items() if k in PermitRecord.__dataclass_fields__})
                         async with csv_lock:
                             append_record(record)
+                            existing_pdfs.add(record.pdf_path)
                         ocr_count[0] += 1
                 except Exception as e:
                     print(f"  ⚠ OCR: {e}")
@@ -243,8 +259,51 @@ def show_status():
         print(f"CSV records: {lines}")
 
 
-def fix_missing():
-    """Open PDFs with missing owner/architect and prompt user to fill in."""
+def _is_valid_field(val: str) -> bool:
+    """Check if a field value is real data (not empty, not OCR garbage)."""
+    if not val or len(val.strip()) < 2:
+        return False
+    val = val.strip()
+    if re.match(r'^[\d\s./\-]+$', val):
+        return False  # pure numbers aren't names
+    heb = re.findall(r'[\u0590-\u05FF]', val)
+    return len(heb) / max(len(val.replace(' ', '')), 1) >= 0.25
+
+
+def _is_complete(row: dict) -> bool:
+    """A row is complete if owner AND architect have valid data."""
+    return _is_valid_field(row.get("owner", "")) and _is_valid_field(row.get("architect", ""))
+
+
+def cleanup():
+    """Delete PDFs for records where all key data is extracted."""
+    from src.csv_writer import read_all
+
+    rows = read_all()
+    if not rows:
+        print("No CSV data found.")
+        return
+
+    deleted = 0
+    kept = 0
+    for row in rows:
+        if not _is_complete(row):
+            kept += 1
+            continue
+        pdf = row.get("pdf_path", "")
+        if pdf and Path(pdf).exists():
+            Path(pdf).unlink()
+            deleted += 1
+            # Remove empty parent dir
+            parent = Path(pdf).parent
+            if parent.exists() and not any(parent.iterdir()):
+                parent.rmdir()
+
+    print(f"✓ Deleted {deleted} PDFs (complete records). {kept} kept (incomplete).")
+
+
+async def fix_missing():
+    """Interactive fix: open PDFs with missing data, prompt user, delete when complete."""
     import subprocess
     from src.csv_writer import read_all, rewrite_all, COLUMNS
 
@@ -253,36 +312,87 @@ def fix_missing():
         print("No CSV data found.")
         return
 
-    to_fix = [(i, r) for i, r in enumerate(rows) if not r.get("owner") or not r.get("architect")]
-    print(f"Found {len(to_fix)} records with missing owner/architect out of {len(rows)} total.\n")
+    to_fix = [(i, r) for i, r in enumerate(rows) if not _is_complete(r)]
+    if not to_fix:
+        print("✓ All records are complete!")
+        return
+
+    # Check which PDFs need re-downloading
+    needs_download = [(i, r) for i, r in to_fix if not r.get("pdf_path") or not Path(r["pdf_path"]).exists()]
+
+    bc = None
+    if needs_download:
+        print(f"📥 {len(needs_download)} PDFs need re-downloading. Launching browser...")
+        bc = BrowserController()
+        await bc.launch()
+
+        for idx, row in needs_download:
+            file_id = row.get("building_file_number", "")
+            if not file_id:
+                continue
+            try:
+                url = f"/BuildingArchiveDetails?OrgEntityNumber={file_id}&pageId=8575&DefinementEntityType=10&BuildingNum={file_id}"
+                await bc.navigate_to_file(url)
+                docs = await bc.get_pdf_links()
+                permits = [d for d in docs if "היתר בניה" in d.get("doc_type", "")]
+                if permits:
+                    d = permits[0]
+                    dirname = sanitize_dirname(row.get("address", "")) or f"file_{file_id}"
+                    nf = d["url"].split("Name_File=")[1].split("&")[0]
+                    dest = PDF_DIR / dirname / f"permit_{nf}.pdf"
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    await bc.download_pdf(d["url"], str(dest))
+                    rows[idx]["pdf_path"] = str(dest)
+                    print(f"  ✓ Downloaded PDF for {row.get('address','?')}")
+            except Exception as e:
+                print(f"  ⚠ Could not download for file {file_id}: {e}")
+
+        await bc.close()
+
+    print(f"\n📝 {len(to_fix)} records to fix. Enter = skip field, 'q' = save & quit, 's' = skip record\n")
 
     fixed = 0
     for idx, row in to_fix:
         pdf = row.get("pdf_path", "")
         addr = row.get("address", "?")
-        print(f"[{fixed+1}/{len(to_fix)}] File {row.get('building_file_number','?')}: {addr}")
-        print(f"  Current: owner={row.get('owner','')!r}, architect={row.get('architect','')!r}")
+        print(f"[{fixed+1}/{len(to_fix)}] {row.get('building_file_number','?')}: {addr}")
+        print(f"  owner: {row.get('owner','') or '—'}")
+        print(f"  architect: {row.get('architect','') or '—'}")
 
         if pdf and Path(pdf).exists():
             subprocess.Popen(["open", pdf], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print(f"  📄 Opened: {pdf}")
         else:
-            print(f"  ⚠ PDF not found: {pdf}")
+            print(f"  ⚠ No PDF available")
 
-        print("  Fill in missing fields (Enter to skip, 'q' to quit):")
-        for field in COLUMNS:
+        # Prompt for missing fields
+        quit_flag = False
+        for field in ("owner", "architect", "structural_planner", "address", "gush", "helka", "permit_number", "city_plan"):
             current = row.get(field, "")
-            if current and field not in ("owner", "architect", "structural_planner"):
+            if _is_valid_field(current) and field not in ("owner", "architect"):
                 continue
-            if field in ("pdf_path", "date", "building_file_number"):
-                continue
-            val = input(f"    {field} [{current}]: ").strip()
+            val = input(f"  {field} [{current}]: ").strip()
             if val == "q":
-                rewrite_all(rows)
-                print(f"\n✓ Saved. Fixed {fixed} records.")
-                return
+                quit_flag = True
+                break
+            if val == "s":
+                break
             if val:
                 rows[idx][field] = val
+
+        if quit_flag:
+            rewrite_all(rows)
+            print(f"\n✓ Saved. Fixed {fixed} records.")
+            return
+
+        # If now complete, delete the PDF
+        if _is_complete(rows[idx]):
+            if pdf and Path(pdf).exists():
+                Path(pdf).unlink()
+                parent = Path(pdf).parent
+                if parent.exists() and not any(parent.iterdir()):
+                    parent.rmdir()
+                print(f"  🗑 PDF deleted (record complete)")
+
         fixed += 1
         print()
 
@@ -378,7 +488,9 @@ if __name__ == "__main__":
     if "--status" in sys.argv:
         show_status()
     elif "--fix" in sys.argv:
-        fix_missing()
+        asyncio.run(fix_missing())
+    elif "--cleanup" in sys.argv:
+        cleanup()
     elif "--reocr" in sys.argv:
         reocr()
     elif "--update" in sys.argv:
