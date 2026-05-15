@@ -7,10 +7,10 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from PIL import Image
 
-Image.MAX_IMAGE_PIXELS = 500_000_000
+Image.MAX_IMAGE_PIXELS = 1_500_000_000  # ~1.5B pixels, covers large A0 scans
 
 from src.state import StateManager
-from src.browser import BrowserController
+from src.browser import BrowserController, BlockedError
 from src.pdf_processor import process_pdf
 from src.csv_writer import append_record, write_header, CSV_PATH
 
@@ -41,7 +41,7 @@ def sanitize_dirname(address: str) -> str:
 def _ocr_one(args: tuple) -> dict | None:
     """Worker function for parallel OCR. Runs in a subprocess."""
     from PIL import Image as _Img
-    _Img.MAX_IMAGE_PIXELS = 500_000_000
+    _Img.MAX_IMAGE_PIXELS = 1_500_000_000
     pdf_path, file_id, address, date = args
     try:
         from src.pdf_processor import process_pdf as _process
@@ -193,6 +193,11 @@ async def crawl(retry_errors: bool = False):
                     state.mark_file_skipped(file_id)
                     print("⏭")
 
+            except BlockedError as e:
+                print(f"\n{e}")
+                print("💾 Saving progress...")
+                state.save()
+                break
             except Exception as e:
                 print(f"✗ {e}")
                 state.mark_file_error(file_id, str(e))

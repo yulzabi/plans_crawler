@@ -9,7 +9,7 @@ import pytesseract
 from PIL import Image
 
 # Increase PIL limit for large scanned plans
-Image.MAX_IMAGE_PIXELS = 300_000_000
+Image.MAX_IMAGE_PIXELS = 1_500_000_000  # ~1.5B pixels, covers large A0 scans
 
 
 @dataclass

@@ -1,10 +1,21 @@
 """Browser controller for Bartech portal interaction."""
 import asyncio
+import random
 from playwright.async_api import async_playwright, Browser, Page, BrowserContext
 
 BASE_URL = "https://nes.bartech-net.co.il"
 SEARCH_URL = f"{BASE_URL}/SearchBuildingArchive"
-DELAY = 2  # seconds between actions
+DELAY_MIN = 8   # minimum seconds between page loads
+DELAY_MAX = 15  # maximum seconds between page loads
+
+
+async def _human_delay():
+    await asyncio.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
+
+
+class BlockedError(Exception):
+    """Raised when Cloudflare blocks us."""
+    pass
 
 
 class BrowserController:
@@ -26,15 +37,22 @@ class BrowserController:
         if self._pw:
             await self._pw.stop()
 
+    async def _check_blocked(self):
+        """Check if Cloudflare blocked us. Raises BlockedError if so."""
+        content = await self.page.content()
+        if "Cloudflare" in content and ("blocked" in content or "Why have I been blocked" in content or "Ray ID" in content):
+            raise BlockedError("🚫 Cloudflare blocked this IP. Stop and retry later with a different IP.")
+
     async def navigate_to_search(self):
         await self.page.goto(SEARCH_URL, wait_until="networkidle")
-        await asyncio.sleep(DELAY)
+        await self._check_blocked()
+        await _human_delay()
 
     async def perform_search(self):
         """Fill search form for all Ness Ziona records and submit."""
         # Click the "search by land parcel" tab (איתור לפי מקרקעין)
         await self.page.locator("li.resp-tab-item:nth-child(2)").click()
-        await asyncio.sleep(1)
+        await asyncio.sleep(random.uniform(1, 3))
 
         # Leave גוש/חלקה/מגרש empty to get all results
         # Click the visible search button (the one for the active tab)
@@ -67,7 +85,7 @@ class BrowserController:
                 raise RuntimeError("Timed out waiting for search results")
 
         await self.page.wait_for_load_state("networkidle")
-        await asyncio.sleep(DELAY)
+        await _human_delay()
         print("✓ Results page loaded")
         return True
 
@@ -100,7 +118,8 @@ class BrowserController:
         """Navigate to a building file detail page."""
         full_url = url if url.startswith("http") else BASE_URL + url
         await self.page.goto(full_url, wait_until="networkidle")
-        await asyncio.sleep(DELAY)
+        await self._check_blocked()
+        await _human_delay()
 
     async def get_pdf_links(self) -> list[dict]:
         """Parse the file detail page for document links. Returns list of {type, date, url, entity_number}."""
@@ -135,7 +154,7 @@ class BrowserController:
                 pass  # 'Download is starting' error is expected
         download = await download_info.value
         await download.save_as(dest_path)
-        await asyncio.sleep(1)
+        await asyncio.sleep(random.uniform(1, 3))
 
 
 async def test_browser():
