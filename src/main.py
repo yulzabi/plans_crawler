@@ -1,5 +1,6 @@
-"""Main orchestrator for the Ness Ziona building plans crawler."""
+"""Main orchestrator for the building plans crawler. Supports multiple cities."""
 import asyncio
+import csv as csv_mod
 import re
 import signal
 import sys
@@ -12,11 +13,48 @@ Image.MAX_IMAGE_PIXELS = 1_500_000_000  # ~1.5B pixels, covers large A0 scans
 from src.state import StateManager
 from src.browser import BrowserController, BlockedError
 from src.pdf_processor import process_pdf
-from src.csv_writer import append_record, write_header, CSV_PATH
+from src.csv_writer import append_record, write_header, CSV_PATH, COLUMNS, read_all, rewrite_all
 
-DATA_DIR = Path(__file__).parent.parent / "data"
-PDF_DIR = DATA_DIR / "pdfs"
+PROJECT_DIR = Path(__file__).parent.parent
+DATA_DIR = PROJECT_DIR / "data"
+CITIES_FILE = PROJECT_DIR / "cities.csv"
 OCR_WORKERS = 4
+
+
+def _get_city() -> str:
+    for i, arg in enumerate(sys.argv):
+        if arg == "--city" and i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return "nes"
+
+
+def _city_csv(city: str) -> Path:
+    d = DATA_DIR / city
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "output.csv"
+
+
+def _city_pdf_dir(city: str) -> Path:
+    d = DATA_DIR / city / "pdfs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _city_state(city: str) -> Path:
+    d = DATA_DIR / city
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "state.json"
+
+
+def _load_cities() -> list[dict]:
+    if not CITIES_FILE.exists():
+        return []
+    with open(CITIES_FILE, encoding="utf-8") as f:
+        return [{"subdomain": row[0], "name": row[1]} for row in csv_mod.reader(f) if row and not row[0].startswith("#")]
+
+
+# Keep backward compat — default paths for single-city mode
+PDF_DIR = DATA_DIR / "pdfs"
 
 _shutdown = False
 
@@ -42,11 +80,12 @@ def _ocr_one(args: tuple) -> dict | None:
     """Worker function for parallel OCR. Runs in a subprocess."""
     from PIL import Image as _Img
     _Img.MAX_IMAGE_PIXELS = 1_500_000_000
-    pdf_path, file_id, address, date = args
+    pdf_path, file_id, address, date, city_name = args
     try:
         from src.pdf_processor import process_pdf as _process
         record = _process(pdf_path)
         if record:
+            record.city = city_name
             record.building_file_number = file_id
             record.date = date
             if not record.address:
@@ -59,8 +98,13 @@ def _ocr_one(args: tuple) -> dict | None:
 
 async def crawl(retry_errors: bool = False):
     global _shutdown
-    state = StateManager()
-    bc = BrowserController()
+    city = _get_city()
+    city_csv = _city_csv(city)
+    city_pdfs = _city_pdf_dir(city)
+    state = StateManager(path=_city_state(city))
+    bc = BrowserController(subdomain=city)
+
+    print(f"🏙 City: {city} | CSV: {city_csv}")
 
     try:
         await bc.launch()
@@ -93,8 +137,8 @@ async def crawl(retry_errors: bool = False):
             print("✓ Already complete. Use --retry-errors to reprocess failures.")
             return
 
-        if not CSV_PATH.exists():
-            write_header()
+        if not city_csv.exists():
+            write_header(city_csv)
 
         print(f"\n🚀 Processing: {remaining} files ({OCR_WORKERS} OCR workers)")
 
@@ -107,13 +151,12 @@ async def crawl(retry_errors: bool = False):
         ocr_count = [0]
 
         # Load existing CSV to know which PDFs already have results
-        from src.csv_writer import read_all
-        existing_pdfs = {r.get("pdf_path") for r in read_all() if r.get("pdf_path")}
+        existing_pdfs = {r.get("pdf_path") for r in read_all(city_csv) if r.get("pdf_path")}
 
         async def queue_if_needed(pdf_path, file_id, address, date):
             """Only queue for OCR if not already in CSV."""
             if pdf_path not in existing_pdfs:
-                await ocr_queue.put((pdf_path, file_id, address, date))
+                await ocr_queue.put((pdf_path, file_id, address, date, city))
 
         # Enqueue already-downloaded files from previous interrupted run
         if already_downloaded:
@@ -122,7 +165,7 @@ async def crawl(retry_errors: bool = False):
                 for i, pdf in enumerate(entry.pdfs):
                     date = entry.doc_meta[i]["date"] if i < len(entry.doc_meta) else ""
                     if pdf not in existing_pdfs:
-                        await ocr_queue.put((pdf, file_id, entry.address, date))
+                        await ocr_queue.put((pdf, file_id, entry.address, date, city))
                         queued += 1
             if queued:
                 print(f"  ↻ {queued} PDFs from previous run need OCR")
@@ -143,7 +186,7 @@ async def crawl(retry_errors: bool = False):
                     if result and "_error" not in result:
                         record = PermitRecord(**{k: v for k, v in result.items() if k in PermitRecord.__dataclass_fields__})
                         async with csv_lock:
-                            append_record(record)
+                            append_record(record, city_csv)
                             existing_pdfs.add(record.pdf_path)
                         ocr_count[0] += 1
                 except Exception as e:
@@ -191,14 +234,14 @@ async def crawl(retry_errors: bool = False):
                         dirname = sanitize_dirname(entry.address) or f"file_{file_id}"
                         nf = doc_info["url"].split("Name_File=")[1].split("&")[0]
                         filename = f"permit_{doc_info.get('entity_number') or nf}.pdf"
-                        dest = PDF_DIR / dirname / filename
+                        dest = city_pdfs / dirname / filename
                         dest.parent.mkdir(parents=True, exist_ok=True)
                         await bc.download_pdf(doc_info["url"], str(dest))
                         pdf_paths.append(str(dest))
                         dm = {"date": doc_info.get("date", ""), "entity_number": doc_info.get("entity_number", "")}
                         meta.append(dm)
                         # Feed to OCR queue immediately
-                        await ocr_queue.put((str(dest), file_id, entry.address, dm["date"]))
+                        await ocr_queue.put((str(dest), file_id, entry.address, dm["date"], city))
                     except Exception as e:
                         print(f"⚠dl:{e}", end=" ")
 
@@ -241,7 +284,7 @@ async def crawl(retry_errors: bool = False):
         progress = state.get_progress()
         print(f"\n{'='*50}")
         print(f"Done! {progress}")
-        print(f"CSV: {CSV_PATH} ({ocr_count[0]} records written)")
+        print(f"CSV: {city_csv} ({ocr_count[0]} records written)")
 
     finally:
         if bc:
@@ -249,13 +292,16 @@ async def crawl(retry_errors: bool = False):
 
 
 def show_status():
-    state = StateManager()
+    city = _get_city()
+    state = StateManager(path=_city_state(city))
     p = state.get_progress()
+    print(f"City: {city}")
     print(f"Phase: {state.phase}")
     for k, v in p.items():
         print(f"  {k}: {v}")
-    if CSV_PATH.exists():
-        lines = sum(1 for _ in open(CSV_PATH)) - 1
+    csv_path = _city_csv(city)
+    if csv_path.exists():
+        lines = sum(1 for _ in open(csv_path)) - 1
         print(f"CSV records: {lines}")
 
 
@@ -277,9 +323,8 @@ def _is_complete(row: dict) -> bool:
 
 def cleanup():
     """Delete PDFs for records where all key data is extracted."""
-    from src.csv_writer import read_all
-
-    rows = read_all()
+    city = _get_city()
+    rows = read_all(_city_csv(city))
     if not rows:
         print("No CSV data found.")
         return
@@ -305,9 +350,10 @@ def cleanup():
 async def fix_missing():
     """Interactive fix: open PDFs with missing data, prompt user, delete when complete."""
     import subprocess
-    from src.csv_writer import read_all, rewrite_all
+    city = _get_city()
+    city_csv = _city_csv(city)
 
-    rows = read_all()
+    rows = read_all(city_csv)
     if not rows:
         print("No CSV data found.")
         return
@@ -339,7 +385,7 @@ async def fix_missing():
                     d = permits[0]
                     dirname = sanitize_dirname(row.get("address", "")) or f"file_{file_id}"
                     nf = d["url"].split("Name_File=")[1].split("&")[0]
-                    dest = PDF_DIR / dirname / f"permit_{nf}.pdf"
+                    dest = _city_pdf_dir(_get_city()) / dirname / f"permit_{nf}.pdf"
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     await bc.download_pdf(d["url"], str(dest))
                     rows[idx]["pdf_path"] = str(dest)
@@ -376,7 +422,7 @@ async def fix_missing():
                 action = ""
 
             if action == "q":
-                rewrite_all(rows)
+                rewrite_all(rows, city_csv)
                 print(f"\n✓ Saved. Fixed {fixed} records.")
                 return
             if action == "s":
@@ -405,7 +451,7 @@ async def fix_missing():
                 except EOFError:
                     break
                 if val == "q":
-                    rewrite_all(rows)
+                    rewrite_all(rows, city_csv)
                     print(f"\n✓ Saved. Fixed {fixed} records.")
                     return
                 if val == "s":
@@ -454,7 +500,7 @@ async def fix_missing():
     except KeyboardInterrupt:
         print(f"\n\n🛑 נעצר.")
 
-    rewrite_all(rows)
+    rewrite_all(rows, city_csv)
     print(f"\n{'='*50}")
     print(f"✓ סיום. תוקנו {fixed} רשומות. CSV עודכן.")
 
@@ -492,9 +538,10 @@ async def update():
 def reocr():
     """Re-OCR PDFs where owner or architect is missing. Updates CSV in place. Parallel."""
     from concurrent.futures import ProcessPoolExecutor
-    from src.csv_writer import read_all, rewrite_all
 
-    rows = read_all()
+    city = _get_city()
+    city_csv = _city_csv(city)
+    rows = read_all(city_csv)
     if not rows:
         print("No CSV data found.")
         return
@@ -528,7 +575,7 @@ def reocr():
         if updated:
             fixed += 1
 
-    rewrite_all(rows)
+    rewrite_all(rows, city_csv)
     print(f"✓ Updated {fixed} records. CSV saved.")
 
 
@@ -543,6 +590,43 @@ def _reocr_one(pdf_path: str) -> dict | None:
         return None
 
 
+def list_cities():
+    cities = _load_cities()
+    print(f"📋 {len(cities)} cities configured:\n")
+    for c in cities:
+        state_path = _city_state(c["subdomain"])
+        status = ""
+        if state_path.exists():
+            s = StateManager(path=state_path)
+            p = s.get_progress()
+            status = f" — {p.get('total',0)} files, {p.get('processed',0)} done"
+        print(f"  {c['subdomain']:12} {c['name']}{status}")
+
+
+def merge_csvs():
+    """Merge all city CSVs into one unified file."""
+    cities = _load_cities()
+    all_rows = []
+    for c in cities:
+        csv_path = _city_csv(c["subdomain"])
+        if csv_path.exists():
+            rows = read_all(csv_path)
+            # Ensure city column is set
+            for r in rows:
+                if not r.get("city"):
+                    r["city"] = c["name"]
+            all_rows.extend(rows)
+            print(f"  {c['subdomain']}: {len(rows)} records")
+
+    if not all_rows:
+        print("No data found.")
+        return
+
+    merged_path = DATA_DIR / "all_cities.csv"
+    rewrite_all(all_rows, merged_path)
+    print(f"\n✓ Merged {len(all_rows)} records → {merged_path}")
+
+
 if __name__ == "__main__":
     if "--status" in sys.argv:
         show_status()
@@ -554,6 +638,10 @@ if __name__ == "__main__":
         reocr()
     elif "--update" in sys.argv:
         asyncio.run(update())
+    elif "--cities" in sys.argv:
+        list_cities()
+    elif "--merge" in sys.argv:
+        merge_csvs()
     elif "--retry-errors" in sys.argv:
         asyncio.run(crawl(retry_errors=True))
     else:

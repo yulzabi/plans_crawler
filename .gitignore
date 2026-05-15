@@ -1,6 +1,6 @@
 # PDFs and crawl state (large / local only)
-data/pdfs/
-data/state.json
+data/*/pdfs/
+data/*/state.json
 
 # Python
 __pycache__/
@@ -17,7 +17,7 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Planning docs (PDD artifacts, not needed in repo)
+# Planning docs
 research/
 design/
 implementation/

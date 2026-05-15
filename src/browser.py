@@ -19,11 +19,13 @@ class BlockedError(Exception):
 
 
 class BrowserController:
-    def __init__(self):
+    def __init__(self, subdomain: str = "nes"):
         self._pw = None
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
         self.page: Page | None = None
+        self.base_url = f"https://{subdomain}.bartech-net.co.il"
+        self.search_url = f"{self.base_url}/SearchBuildingArchive"
 
     async def launch(self):
         self._pw = await async_playwright().start()
@@ -44,7 +46,7 @@ class BrowserController:
             raise BlockedError("🚫 Cloudflare blocked this IP. Stop and retry later with a different IP.")
 
     async def navigate_to_search(self):
-        await self.page.goto(SEARCH_URL, wait_until="networkidle")
+        await self.page.goto(self.search_url, wait_until="networkidle")
         await self._check_blocked()
         await _human_delay()
 
@@ -116,7 +118,7 @@ class BrowserController:
 
     async def navigate_to_file(self, url: str):
         """Navigate to a building file detail page."""
-        full_url = url if url.startswith("http") else BASE_URL + url
+        full_url = url if url.startswith("http") else self.base_url + url
         await self.page.goto(full_url, wait_until="networkidle")
         await self._check_blocked()
         await _human_delay()
@@ -146,7 +148,7 @@ class BrowserController:
         """Download a PDF from a DocumentViewer URL."""
         from pathlib import Path
         Path(dest_path).parent.mkdir(parents=True, exist_ok=True)
-        full_url = url if url.startswith("http") else BASE_URL + url
+        full_url = url if url.startswith("http") else self.base_url + url
         async with self.page.expect_download() as download_info:
             try:
                 await self.page.goto(full_url)

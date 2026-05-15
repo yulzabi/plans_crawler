@@ -14,6 +14,7 @@ Image.MAX_IMAGE_PIXELS = 1_500_000_000  # ~1.5B pixels, covers large A0 scans
 
 @dataclass
 class PermitRecord:
+    city: str = ""
     building_file_number: str = ""
     permit_number: str = ""
     address: str = ""

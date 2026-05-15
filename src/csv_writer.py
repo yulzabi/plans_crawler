@@ -6,7 +6,7 @@ from src.pdf_processor import PermitRecord
 CSV_PATH = Path(__file__).parent.parent / "data" / "output.csv"
 
 COLUMNS = [
-    "building_file_number", "permit_number", "address", "gush", "helka",
+    "city", "building_file_number", "permit_number", "address", "gush", "helka",
     "migrash", "city_plan", "owner", "architect", "structural_planner",
     "pdf_path", "date",
 ]

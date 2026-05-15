@@ -356,7 +356,7 @@ document.getElementById('archChart').addEventListener('click',e=>{
 function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}}
 
 // Init
-fetch('data/output.csv').then(r=>r.text()).then(text=>{
+fetch('data/nes/output.csv').then(r=>r.text()).then(text=>{
   document.getElementById('loading').classList.add('hidden');
   allRows=parseCSV(text);
   initFilters();

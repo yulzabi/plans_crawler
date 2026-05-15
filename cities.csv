@@ -1,0 +1,52 @@
+# Cities configuration for the building plans crawler
+# Format: subdomain, city_name_hebrew
+# All use https://{subdomain}.bartech-net.co.il/SearchBuildingArchive
+akko,עכו
+arad,ערד
+arava,ערבה תיכונה
+ashdod,אשדוד
+azr,אזור
+bns,בני שמעון
+bry,בנימינה גבעת עדה
+btv,באר טוביה
+drs,דרום השרון
+e-galil,גליל עליון
+elad,אלעד
+emy,עמק יזרעאל
+g-yavne,גן יבנה
+gedera,גדרה
+gel,גלבוע
+golan,גולן
+gsm,גבעת שמואל
+hadera,חדרה
+hhv,הר חברון
+hmd,חבל מודיעין
+hoa,חוף אשקלון
+hof,חוף השרון
+k-shmona,קריית שמונה
+lehavim,להבים
+lod,לוד
+megilot,מגילות
+mizpe,מצפה רמון
+mrg,מרום הגליל
+mta,מטה אשר
+mtr,מזרח השרון
+mty,מטה יהודה
+nes,נס ציונה
+netivot,נתיבות
+ngm,נגב מערבי
+nmz,נגב מזרחי
+nzr,נהריה
+ono,קריית אונו
+phk,פרדס חנה כרכור
+rhv,רחובות
+rin,רמת הנגב
+sfr,צפת
+shm,שומרון
+shs,שער שומרון
+srk,שורקות
+tamar,תמר
+tivon,קריית טבעון
+yhd,יהוד
+yov,יואב
+zvulun,זבולון
