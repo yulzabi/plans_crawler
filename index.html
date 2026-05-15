@@ -3,141 +3,184 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>היתרי בנייה נס ציונה</title>
+<title>היתרי בנייה — נס ציונה</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{primary:{50:'#eff6ff',100:'#dbeafe',200:'#bfdbfe',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8',800:'#1e3a8a',900:'#1e2a5e'},slate:{50:'#f8fafc',100:'#f1f5f9',200:'#e2e8f0',300:'#cbd5e1',400:'#94a3b8',500:'#64748b',600:'#475569',700:'#334155',800:'#1e293b',900:'#0f172a'}}}}}</script>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f7fa;color:#1a1a2e;direction:rtl;padding-bottom:40px}
-.container{max-width:1400px;margin:0 auto;padding:0 16px}
-header{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:18px 0;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.2)}
-header .container{display:flex;align-items:center;gap:12px}
-header h1{font-size:1.4em}
-header p{opacity:.7;font-size:.8em}
-.controls{background:#fff;border-radius:8px;padding:12px 14px;margin:14px 0;box-shadow:0 1px 3px rgba(0,0,0,.1)}
-.search-row{display:flex;gap:8px;margin-bottom:10px}
-.search-row input{flex:1;padding:10px 14px;border:1px solid #ddd;border-radius:6px;font-size:1em}
-.search-row input:focus{outline:none;border-color:#4361ee;box-shadow:0 0 0 3px rgba(67,97,238,.1)}
-.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.filters label{font-size:.8em;color:#555;display:flex;align-items:center;gap:4px}
-.filters select{padding:5px 8px;border:1px solid #ddd;border-radius:4px;font-size:.82em;max-width:140px}
-.filters input[type=checkbox]{margin:0}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;margin-bottom:14px}
-.stat{background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,.1);text-align:center}
-.stat .num{font-size:1.5em;font-weight:700;color:#4361ee}
-.stat .label{font-size:.72em;color:#666;margin-top:2px}
-.results-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:.82em;color:#666}
-.export-btn{padding:5px 12px;border:1px solid #4361ee;border-radius:4px;background:#fff;color:#4361ee;cursor:pointer;font-size:.8em}
-.export-btn:hover{background:#4361ee;color:#fff}
-.table-wrap{overflow-x:auto;background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
-table{width:100%;border-collapse:collapse;min-width:800px}
-th{background:#f0f2f5;padding:10px;text-align:right;font-size:.78em;color:#555;cursor:pointer;user-select:none;white-space:nowrap}
-th:hover{background:#e2e6ea}
-th .arr{font-size:.6em;margin-right:2px;opacity:.6}
-td{padding:9px 10px;border-top:1px solid #eee;font-size:.83em;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-td.wrap{white-space:normal;word-break:break-word}
-tr:hover td{background:#f8f9ff}
-tr.group-row{cursor:pointer}
-tr.group-row td:first-child::before{content:'▸ ';color:#4361ee;font-size:.9em}
-tr.group-row.open td:first-child::before{content:'▾ '}
-tr.sub-row{background:#f9fafe}
-tr.sub-row td{padding:7px 10px 7px 24px;font-size:.78em;border-top:1px dashed #e0e0e0}
-td a{color:#4361ee;text-decoration:none}
-td a:hover{text-decoration:underline}
-td.dim{color:#bbb;font-style:italic}
-td.bad{color:#c0392b;opacity:.7;font-size:.75em}
-.badge{display:inline-block;background:#e8ecff;color:#4361ee;border-radius:10px;padding:1px 7px;font-size:.7em;margin-right:4px}
-.pagination{display:flex;justify-content:center;gap:3px;margin-top:14px;flex-wrap:wrap}
-.pagination button{padding:5px 10px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:.8em}
-.pagination button.active{background:#4361ee;color:#fff;border-color:#4361ee}
-.pagination button:hover:not(.active):not(:disabled){background:#f0f2f5}
-.pagination button:disabled{opacity:.4;cursor:default}
-.arch-section{background:#fff;border-radius:8px;padding:16px;margin-top:14px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
-.arch-section h3{font-size:.9em;margin-bottom:10px;color:#333}
-.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:.8em}
-.bar-row .name{min-width:140px;text-align:right;cursor:pointer;color:#4361ee;text-decoration:none}
-.bar-row .name:hover{text-decoration:underline}
-.bar-row .bar{height:20px;background:linear-gradient(90deg,#4361ee,#7c3aed);border-radius:3px;min-width:2px}
-.bar-row .cnt{min-width:30px;font-size:.75em;color:#666}
-.empty{text-align:center;padding:40px;color:#999;font-size:.9em}
-.loading{text-align:center;padding:60px;color:#999;font-size:1.1em}
-.hidden{display:none}
-@media(max-width:700px){.filters{flex-direction:column;align-items:stretch}.stats{grid-template-columns:repeat(3,1fr)}}
+[dir=rtl] .flip{transform:scaleX(-1)}
+.skeleton{background:linear-gradient(90deg,#e2e8f0 25%,#f1f5f9 50%,#e2e8f0 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.combo-list{max-height:200px;overflow-y:auto}
+.fade-in{animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
-<body>
-<header><div class="container"><h1>🏗 היתרי בנייה — נס ציונה</h1></div></header>
-<div class="container">
-<div class="controls">
-  <div class="search-row">
-    <input type="text" id="search" placeholder="🔍 חיפוש חופשי — כתובת, בעלים, אדריכל..." autocomplete="off">
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+<!-- Navbar -->
+<nav class="bg-primary-800 text-white sticky top-0 z-50 shadow-lg">
+  <div class="max-w-[1600px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-sm font-bold">🏗</div>
+      <div>
+        <h1 class="text-base font-semibold leading-tight">היתרי בנייה — נס ציונה</h1>
+        <p class="text-[10px] text-primary-200 leading-tight">מערכת מעקב תוכניות בנייה</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-4 text-xs">
+      <div id="navStats" class="hidden sm:flex items-center gap-4 text-primary-200"></div>
+      <a href="https://github.com/yulzabi/plans_crawler" target="_blank" class="text-primary-200 hover:text-white transition">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.605-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
+      </a>
+    </div>
   </div>
-  <div class="filters">
-    <label>שנה: <select id="yearFrom"></select> — <select id="yearTo"></select></label>
-    <label>גוש: <select id="gushFilter"><option value="">הכל</option></select></label>
-    <label>רחוב: <select id="streetFilter"><option value="">הכל</option></select></label>
-    <label>אדריכל: <select id="architectFilter"><option value="">הכל</option></select></label>
-    <label><input type="checkbox" id="missingOnly"> חסרי נתונים בלבד</label>
-    <label><input type="checkbox" id="groupByAddress" checked> קיבוץ לפי כתובת</label>
+</nav>
+
+<!-- Main Content -->
+<main class="max-w-[1600px] mx-auto px-4 sm:px-6 py-5">
+
+<!-- Metric Cards -->
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5" id="metricCards">
+  <div class="skeleton h-20 rounded-xl"></div>
+  <div class="skeleton h-20 rounded-xl"></div>
+  <div class="skeleton h-20 rounded-xl"></div>
+  <div class="skeleton h-20 rounded-xl"></div>
+  <div class="skeleton h-20 rounded-xl"></div>
+</div>
+
+<!-- Filters -->
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-5 shadow-sm">
+  <div class="flex flex-wrap items-center gap-3">
+    <div class="flex-1 min-w-[220px] relative">
+      <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      <input id="search" type="text" placeholder="חיפוש חופשי..." class="w-full pr-9 pl-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition" autocomplete="off">
+    </div>
+    <div class="flex items-center gap-2 text-xs text-slate-600">
+      <span>שנה:</span>
+      <select id="yearFrom" class="border border-slate-200 rounded-md px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary-500/20"></select>
+      <span>—</span>
+      <select id="yearTo" class="border border-slate-200 rounded-md px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary-500/20"></select>
+    </div>
+    <select id="gushFilter" class="border border-slate-200 rounded-md px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary-500/20"><option value="">כל הגושים</option></select>
+    <div class="relative" id="streetCombo">
+      <input id="streetSearch" type="text" placeholder="רחוב..." class="border border-slate-200 rounded-md px-2 py-1.5 text-xs w-28 focus:w-40 transition-all focus:ring-2 focus:ring-primary-500/20" autocomplete="off">
+      <input id="streetFilter" type="hidden" value="">
+      <div id="streetDropdown" class="hidden absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 w-48 combo-list"></div>
+    </div>
+    <div class="relative" id="archCombo">
+      <input id="archSearch" type="text" placeholder="אדריכל..." class="border border-slate-200 rounded-md px-2 py-1.5 text-xs w-28 focus:w-40 transition-all focus:ring-2 focus:ring-primary-500/20" autocomplete="off">
+      <input id="architectFilter" type="hidden" value="">
+      <div id="archDropdown" class="hidden absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 w-56 combo-list"></div>
+    </div>
+    <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+      <input type="checkbox" id="missingOnly" class="rounded border-slate-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5">
+      <span>חסרי נתונים</span>
+    </label>
+    <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+      <input type="checkbox" id="privateOnly" class="rounded border-slate-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5">
+      <span>בתים פרטיים בלבד</span>
+    </label>
+    <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+      <input type="checkbox" id="groupByAddress" checked class="rounded border-slate-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5">
+      <span>קיבוץ לפי כתובת</span>
+    </label>
+    <button id="exportBtn" class="mr-auto bg-primary-50 text-primary-700 border border-primary-200 rounded-md px-3 py-1.5 text-xs font-medium hover:bg-primary-100 transition">⬇ ייצוא</button>
   </div>
 </div>
-<div class="stats" id="stats"></div>
-<div class="results-bar"><span id="resultsCount"></span><button class="export-btn" id="exportBtn">⬇ ייצוא</button></div>
-<div class="table-wrap">
-  <table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table>
+
+<!-- Content Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-5">
+
+<!-- Table (3/4) -->
+<div class="lg:col-span-3">
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+      <span id="resultsCount" class="text-xs text-slate-500"></span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm" id="mainTable">
+        <thead><tr id="thead" class="bg-slate-50 border-b border-slate-200"></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="px-4 py-3 border-t border-slate-100" id="paginationWrap">
+      <div class="flex justify-center gap-1" id="pagination"></div>
+    </div>
+  </div>
 </div>
-<div class="pagination" id="pagination"></div>
-<div class="arch-section"><h3>🏆 אדריכלים מובילים</h3><div id="archChart"></div></div>
+
+<!-- Sidebar (1/4) -->
+<div class="space-y-4">
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+    <h3 class="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">🏆 אדריכלים מובילים</h3>
+    <div id="archChart" class="space-y-2"></div>
+  </div>
 </div>
-<div class="loading" id="loading">⏳ טוען נתונים...</div>
+
+</div>
+</main>
+
+<!-- Loading Overlay -->
+<div id="loading" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-[200] flex items-center justify-center">
+  <div class="text-center">
+    <div class="w-10 h-10 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto mb-3"></div>
+    <p class="text-sm text-slate-500">טוען נתונים...</p>
+  </div>
+</div>
+
+<!-- Empty State -->
+<template id="emptyTpl">
+  <tr><td colspan="99" class="py-16 text-center">
+    <svg class="w-16 h-16 mx-auto text-slate-200 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    <p class="text-slate-400 text-sm">לא נמצאו תוצאות</p>
+    <p class="text-slate-300 text-xs mt-1">נסה לשנות את הסינון</p>
+  </td></tr>
+</template>
 
 <script>
 const COLS=[
-  {key:'address',label:'כתובת'},
+  {key:'address',label:'כתובת',cls:'font-medium text-slate-800'},
   {key:'owner',label:'בעל היתר'},
   {key:'architect',label:'אדריכל'},
-  {key:'gush',label:'גוש'},
+  {key:'gush',label:'גוש',badge:true},
   {key:'helka',label:'חלקה'},
-  {key:'date',label:'תאריך'},
+  {key:'date',label:'תאריך',badge:true},
   {key:'permit_number',label:'היתר'},
 ];
-const PER_PAGE=50;
+const PER_PAGE=40;
 let allRows=[],filtered=[],grouped=[],sortCol='date',sortAsc=false,page=0;
+let allStreets=[],allArchitects=[];
 
-function parseCSV(text){
-  text=text.replace(/\r/g,'');
-  const lines=text.split('\n').filter(l=>l.trim());
-  if(lines.length<2)return[];
-  const headers=parseLine(lines[0]);
-  return lines.slice(1).map(line=>{
-    const vals=parseLine(line);
-    const obj={};
-    headers.forEach((h,i)=>obj[h.trim()]=(vals[i]||'').trim());
-    return obj;
-  }).filter(r=>r.address||r.building_file_number);
-}
-function parseLine(line){
-  const r=[];let cur='',inQ=false;
-  for(const ch of line){if(ch==='"'){inQ=!inQ}else if(ch===','&&!inQ){r.push(cur);cur=''}else{cur+=ch}}
-  r.push(cur);return r;
-}
+function parseCSV(t){t=t.replace(/\r/g,'');const l=t.split('\n').filter(x=>x.trim());if(l.length<2)return[];const h=parseLine(l[0]);return l.slice(1).map(line=>{const v=parseLine(line);const o={};h.forEach((k,i)=>o[k.trim()]=(v[i]||'').trim());return o}).filter(r=>r.address||r.building_file_number)}
+function parseLine(l){const r=[];let c='',q=false;for(const ch of l){if(ch==='"')q=!q;else if(ch===','&&!q){r.push(c);c=''}else c+=ch}r.push(c);return r}
 function parseYear(d){if(!d)return 0;const p=d.split('/');return parseInt(p[p.length-1])||0}
-function extractStreet(addr){if(!addr)return'';return addr.replace(/\d+/g,'').replace(/[,،.]/g,' ').replace(/\s+/g,' ').trim()}
-function isGarbage(val){if(!val||val.length<3)return false;const heb=/[\u0590-\u05FF]/g;const m=val.match(heb);if(!m)return true;return m.length/val.replace(/\s/g,'').length<0.25}
-function cleanVal(val){if(!val)return'';if(isGarbage(val))return'';return val}
+function extractStreet(a){if(!a)return'';return a.replace(/\d+/g,'').replace(/[,،.()]/g,' ').replace(/\s+/g,' ').trim()}
+function isGarbage(v){if(!v||v.length<3)return false;if(/^[\d\s.\/\-]+$/.test(v))return false;const m=v.match(/[\u0590-\u05FF]/g);if(!m)return true;return m.length/v.replace(/\s/g,'').length<0.25}
+function isPrivateHouse(r){
+  // Multiple helka/gush = likely building/industrial
+  const h=r.helka||'',g=r.gush||'';
+  if(/[,\-]/.test(h)||/[,\-]/.test(g))return false;
+  // Multiple values separated by spaces (e.g. "215 216")
+  if(h.trim().split(/\s+/).length>1)return false;
+  if(g.trim().split(/\s+/).length>1)return false;
+  return true;
+}
+function clean(v){return(!v||isGarbage(v))?'':v}
 
 function initFilters(){
   const years=new Set(),gushes=new Set(),streets=new Set(),architects=new Set();
   allRows.forEach(r=>{
     const y=parseYear(r.date);if(y>=2000&&y<=2030)years.add(y);
-    if(r.gush&&r.gush.match(/^\d+$/))gushes.add(r.gush);
-    const st=extractStreet(r.address);if(st&&st.length>2)streets.add(st);
-    const a=cleanVal(r.architect);if(a)architects.add(a);
+    if(r.gush&&/^\d+$/.test(r.gush))gushes.add(r.gush);
+    const s=extractStreet(r.address);if(s&&s.length>2)streets.add(s);
+    const a=clean(r.architect);if(a)architects.add(a);
   });
   const sy=[...years].sort();
   document.getElementById('yearFrom').innerHTML='<option value="">הכל</option>'+sy.map(y=>`<option value="${y}">${y}</option>`).join('');
-  document.getElementById('yearTo').innerHTML='<option value="">הכל</option>'+sy.reverse().map(y=>`<option value="${y}">${y}</option>`).join('');
+  document.getElementById('yearTo').innerHTML='<option value="">הכל</option>'+[...sy].reverse().map(y=>`<option value="${y}">${y}</option>`).join('');
   [...gushes].sort((a,b)=>a-b).forEach(g=>document.getElementById('gushFilter').innerHTML+=`<option value="${g}">${g}</option>`);
-  [...streets].sort().slice(0,100).forEach(s=>document.getElementById('streetFilter').innerHTML+=`<option value="${s}">${s}</option>`);
-  [...architects].sort().forEach(a=>document.getElementById('architectFilter').innerHTML+=`<option value="${a}">${a}</option>`);
+  allStreets=[...streets].sort();
+  allArchitects=[...architects].sort();
 }
 
 function applyFilters(){
@@ -148,185 +191,179 @@ function applyFilters(){
   const street=document.getElementById('streetFilter').value;
   const arch=document.getElementById('architectFilter').value;
   const missing=document.getElementById('missingOnly').checked;
+  const privateOnly=document.getElementById('privateOnly').checked;
   const isGrouped=document.getElementById('groupByAddress').checked;
 
   filtered=allRows.filter(r=>{
     if(q&&!Object.values(r).some(v=>(v||'').toLowerCase().includes(q)))return false;
-    const y=parseYear(r.date);
-    if(yf&&y<yf)return false;if(yt<9999&&y>yt)return false;
+    const y=parseYear(r.date);if(yf&&y<yf)return false;if(yt<9999&&y>yt)return false;
     if(gush&&r.gush!==gush)return false;
     if(street&&!extractStreet(r.address).includes(street))return false;
-    if(arch&&cleanVal(r.architect)!==arch)return false;
-    if(missing&&cleanVal(r.owner)&&cleanVal(r.architect))return false;
+    if(arch&&clean(r.architect)!==arch)return false;
+    if(missing&&clean(r.owner)&&clean(r.architect))return false;
+    if(privateOnly&&!isPrivateHouse(r))return false;
     return true;
   });
+  filtered.sort((a,b)=>{let va=a[sortCol]||'',vb=b[sortCol]||'';if(sortCol==='date'){va=parseYear(va);vb=parseYear(vb)}if(sortCol==='gush'||sortCol==='helka'){va=parseInt(va)||0;vb=parseInt(vb)||0}return sortAsc?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0)});
 
-  filtered.sort((a,b)=>{
-    let va=a[sortCol]||'',vb=b[sortCol]||'';
-    if(sortCol==='date'){va=parseYear(va);vb=parseYear(vb)}
-    if(sortCol==='gush'||sortCol==='helka'){va=parseInt(va)||0;vb=parseInt(vb)||0}
-    return sortAsc?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0);
-  });
-
-  if(isGrouped){
-    const map=new Map();
-    filtered.forEach(r=>{
-      const key=r.address||r.building_file_number||Math.random();
-      if(!map.has(key))map.set(key,[]);
-      map.get(key).push(r);
-    });
-    grouped=[...map.values()].map(rows=>{
-      rows.sort((a,b)=>parseYear(b.date)-parseYear(a.date));
-      return rows;
-    });
-  }else{grouped=filtered.map(r=>[r])}
-
-  page=0;updateURL();renderAll();
+  if(isGrouped){const m=new Map();filtered.forEach(r=>{const k=r.address||r.building_file_number||''+Math.random();if(!m.has(k))m.set(k,[]);m.get(k).push(r)});grouped=[...m.values()].map(rows=>{rows.sort((a,b)=>parseYear(b.date)-parseYear(a.date));return rows})}
+  else{grouped=filtered.map(r=>[r])}
+  page=0;renderAll();updateURL();
 }
 
-function renderAll(){renderStats();renderTable();renderPagination();renderArchChart()}
+function renderAll(){renderMetrics();renderTable();renderPagination();renderArchChart()}
 
-function renderStats(){
-  const arch=new Set(filtered.map(r=>cleanVal(r.architect)).filter(Boolean));
+function renderMetrics(){
   const addrs=new Set(filtered.map(r=>r.address).filter(Boolean));
-  const gushes=new Set(filtered.map(r=>r.gush).filter(v=>v&&v.match(/^\d+$/)));
-  const missingC=filtered.filter(r=>!cleanVal(r.owner)||!cleanVal(r.architect)).length;
-  document.getElementById('stats').innerHTML=`
-    <div class="stat"><div class="num">${filtered.length}</div><div class="label">היתרים</div></div>
-    <div class="stat"><div class="num">${addrs.size}</div><div class="label">כתובות</div></div>
-    <div class="stat"><div class="num">${arch.size}</div><div class="label">אדריכלים</div></div>
-    <div class="stat"><div class="num">${gushes.size}</div><div class="label">גושים</div></div>
-    <div class="stat"><div class="num">${missingC}</div><div class="label">חסרי נתונים</div></div>`;
+  const archs=new Set(filtered.map(r=>clean(r.architect)).filter(Boolean));
+  const gushes=new Set(filtered.map(r=>r.gush).filter(v=>v&&/^\d+$/.test(v)));
+  const missingC=filtered.filter(r=>!clean(r.owner)||!clean(r.architect)).length;
+  const streetsC=new Set(filtered.map(r=>extractStreet(r.address)).filter(Boolean));
+  const cards=[
+    {n:filtered.length,l:'סה״כ היתרים',icon:'📋',color:'primary'},
+    {n:addrs.size,l:'כתובות',icon:'🏠',color:'emerald'},
+    {n:archs.size,l:'אדריכלים',icon:'👷',color:'violet'},
+    {n:streetsC.size,l:'רחובות פעילים',icon:'🛣️',color:'amber'},
+    {n:missingC,l:'חסרי נתונים',icon:'⚠️',color:'red'},
+  ];
+  document.getElementById('metricCards').innerHTML=cards.map(c=>`
+    <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm fade-in">
+      <div class="flex items-center justify-between mb-1"><span class="text-lg">${c.icon}</span></div>
+      <div class="text-2xl font-bold text-slate-800">${c.n.toLocaleString()}</div>
+      <div class="text-[11px] text-slate-400 mt-0.5">${c.l}</div>
+    </div>`).join('');
+  document.getElementById('navStats').innerHTML=`<span>${filtered.length} היתרים</span><span>|</span><span>${addrs.size} כתובות</span>`;
+  document.getElementById('navStats').classList.remove('hidden');
 }
 
 function renderTable(){
   document.getElementById('thead').innerHTML=COLS.map(c=>{
-    const arr=sortCol===c.key?(sortAsc?'▲':'▼'):'';
-    return`<th data-col="${c.key}"><span class="arr">${arr}</span>${c.label}</th>`;
-  }).join('')+'<th>🔗</th>';
+    const arr=sortCol===c.key?(sortAsc?'↑':'↓'):'';
+    return`<th class="px-3 py-2.5 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wide cursor-pointer hover:text-slate-700 select-none whitespace-nowrap" data-col="${c.key}">${c.label} <span class="text-primary-500">${arr}</span></th>`;
+  }).join('')+'<th class="px-3 py-2.5 w-10"></th>';
 
   const start=page*PER_PAGE,items=grouped.slice(start,start+PER_PAGE);
-  if(!items.length){document.getElementById('tbody').innerHTML='<tr><td colspan="99" class="empty">לא נמצאו תוצאות</td></tr>';return}
+  if(!items.length){document.getElementById('tbody').innerHTML=document.getElementById('emptyTpl').innerHTML;return}
 
   let html='';
   items.forEach((rows,i)=>{
-    const r=rows[0];
-    const hasMore=rows.length>1;
-    const cls=hasMore?'group-row':'';
-    html+=`<tr class="${cls}" data-idx="${start+i}">${renderCells(r)}</tr>`;
+    const r=rows[0],hasMore=rows.length>1;
+    const stripe=i%2===0?'bg-white':'bg-slate-50/50';
+    const expandCls=hasMore?'cursor-pointer group':'';
+    html+=`<tr class="${stripe} hover:bg-primary-50/40 transition ${expandCls}" data-idx="${start+i}">`;
+    html+=COLS.map(c=>{
+      let v=r[c.key]||'';
+      const extra=c.cls||'';
+      if(!v)return`<td class="px-3 py-2.5 text-slate-300 text-xs">—</td>`;
+      if(isGarbage(v))return`<td class="px-3 py-2.5 text-red-300 text-[10px] truncate max-w-[120px]" title="${v}">⚠ OCR</td>`;
+      if(c.badge&&v)return`<td class="px-3 py-2.5"><span class="inline-block bg-slate-100 text-slate-600 text-[11px] px-2 py-0.5 rounded-full">${v}</span></td>`;
+      const trunc=v.length>35?v.slice(0,35)+'…':v;
+      return`<td class="px-3 py-2.5 text-xs ${extra}" title="${v.length>35?v:''}">${trunc}</td>`;
+    }).join('');
+    const url=r.building_file_number?`https://nes.bartech-net.co.il/BuildingArchiveDetails?OrgEntityNumber=${r.building_file_number}&pageId=8575&DefinementEntityType=10&BuildingNum=${r.building_file_number}`:'';
+    html+=`<td class="px-3 py-2.5 text-center">${url?`<a href="${url}" target="_blank" class="text-primary-500 hover:text-primary-700 text-xs">📄</a>`:''}${hasMore?`<span class="text-[10px] text-slate-400 mr-1 group-hover:text-primary-500">▾${rows.length}</span>`:''}</td>`;
+    html+=`</tr>`;
   });
   document.getElementById('tbody').innerHTML=html;
-  document.getElementById('resultsCount').textContent=`מציג ${start+1}–${Math.min(start+PER_PAGE,grouped.length)} מתוך ${grouped.length}`;
-}
-
-function renderCells(r){
-  let cells=COLS.map(c=>{
-    let v=r[c.key]||'';
-    if(!v)return`<td class="dim">—</td>`;
-    if(isGarbage(v))return`<td class="bad" title="${v}">${v.slice(0,15)}…</td>`;
-    if(v.length>40)return`<td class="wrap" title="${v}">${v.slice(0,40)}…</td>`;
-    return`<td>${v}</td>`;
-  }).join('');
-  const url=r.building_file_number?`https://nes.bartech-net.co.il/BuildingArchiveDetails?OrgEntityNumber=${r.building_file_number}&pageId=8575&DefinementEntityType=10&BuildingNum=${r.building_file_number}`:'';
-  cells+=url?`<td><a href="${url}" target="_blank" title="צפה בארכיב">📄</a></td>`:'<td></td>';
-  return cells;
+  document.getElementById('resultsCount').textContent=`${start+1}–${Math.min(start+PER_PAGE,grouped.length)} מתוך ${grouped.length}`;
 }
 
 function renderPagination(){
   const total=Math.ceil(grouped.length/PER_PAGE);
   if(total<=1){document.getElementById('pagination').innerHTML='';return}
-  let html=`<button ${page===0?'disabled':''} data-p="${page-1}">→</button>`;
+  let h=`<button class="px-2.5 py-1 rounded border text-xs ${page===0?'opacity-30 cursor-default':'border-slate-200 hover:bg-slate-50'}" ${page===0?'disabled':''} data-p="${page-1}">→</button>`;
   for(let i=0;i<total;i++){
-    if(i===0||i===total-1||Math.abs(i-page)<=2)html+=`<button data-p="${i}" class="${i===page?'active':''}">${i+1}</button>`;
-    else if(Math.abs(i-page)===3)html+=`<button disabled>…</button>`;
+    if(i===0||i===total-1||Math.abs(i-page)<=2)h+=`<button class="px-2.5 py-1 rounded border text-xs ${i===page?'bg-primary-600 text-white border-primary-600':'border-slate-200 hover:bg-slate-50'}" data-p="${i}">${i+1}</button>`;
+    else if(Math.abs(i-page)===3)h+=`<span class="px-1 text-slate-300">…</span>`;
   }
-  html+=`<button ${page>=total-1?'disabled':''} data-p="${page+1}">←</button>`;
-  document.getElementById('pagination').innerHTML=html;
+  h+=`<button class="px-2.5 py-1 rounded border text-xs ${page>=total-1?'opacity-30 cursor-default':'border-slate-200 hover:bg-slate-50'}" ${page>=total-1?'disabled':''} data-p="${page+1}">←</button>`;
+  document.getElementById('pagination').innerHTML=h;
 }
 
 function renderArchChart(){
-  const counts={};
-  filtered.forEach(r=>{const a=cleanVal(r.architect);if(a)counts[a]=(counts[a]||0)+1});
-  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,12);
-  if(!sorted.length){document.getElementById('archChart').innerHTML='<div class="empty">אין נתונים</div>';return}
+  const counts={};filtered.forEach(r=>{const a=clean(r.architect);if(a)counts[a]=(counts[a]||0)+1});
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  if(!sorted.length){document.getElementById('archChart').innerHTML='<p class="text-xs text-slate-300 text-center py-4">אין נתונים</p>';return}
   const max=sorted[0][1];
-  document.getElementById('archChart').innerHTML=sorted.map(([name,count])=>
-    `<div class="bar-row"><a class="name" href="?architect=${encodeURIComponent(name)}">${name}</a><div class="bar" style="width:${Math.max(count/max*100,2)}%"></div><span class="cnt">${count}</span></div>`
-  ).join('');
+  document.getElementById('archChart').innerHTML=sorted.map(([name,count])=>`
+    <div class="flex items-center gap-2 group cursor-pointer" data-arch="${name}">
+      <div class="flex-1 min-w-0">
+        <div class="text-xs text-slate-700 truncate group-hover:text-primary-600 transition">${name}</div>
+        <div class="mt-1 h-1.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-l from-primary-500 to-primary-700 rounded-full" style="width:${Math.max(count/max*100,4)}%"></div></div>
+      </div>
+      <span class="text-[11px] font-medium text-slate-500 w-6 text-center">${count}</span>
+    </div>`).join('');
 }
 
-function updateURL(){
-  const p=new URLSearchParams();
-  const q=document.getElementById('search').value;if(q)p.set('q',q);
-  const a=document.getElementById('architectFilter').value;if(a)p.set('architect',a);
-  const g=document.getElementById('gushFilter').value;if(g)p.set('gush',g);
-  const s=document.getElementById('streetFilter').value;if(s)p.set('street',s);
-  const str=p.toString();history.replaceState(null,'',str?'?'+str:location.pathname);
+// Combobox logic
+function setupCombo(inputId,hiddenId,dropdownId,items){
+  const input=document.getElementById(inputId),hidden=document.getElementById(hiddenId),dd=document.getElementById(dropdownId);
+  input.addEventListener('focus',()=>showDD(input,dd,items,''));
+  input.addEventListener('input',()=>{hidden.value='';showDD(input,dd,items,input.value)});
+  input.addEventListener('blur',()=>setTimeout(()=>dd.classList.add('hidden'),150));
+  dd.addEventListener('mousedown',e=>{
+    const li=e.target.closest('[data-val]');if(!li)return;
+    input.value=li.dataset.val;hidden.value=li.dataset.val;dd.classList.add('hidden');applyFilters();
+  });
+  input.addEventListener('keydown',e=>{if(e.key==='Escape'){dd.classList.add('hidden');input.blur()}if(e.key==='Enter'&&!hidden.value){hidden.value=input.value;dd.classList.add('hidden');applyFilters()}});
 }
-function loadURL(){
-  const p=new URLSearchParams(location.search);
-  if(p.get('q'))document.getElementById('search').value=p.get('q');
-  if(p.get('architect'))document.getElementById('architectFilter').value=p.get('architect');
-  if(p.get('gush'))document.getElementById('gushFilter').value=p.get('gush');
-  if(p.get('street'))document.getElementById('streetFilter').value=p.get('street');
+function showDD(input,dd,items,q){
+  const f=q?items.filter(i=>i.includes(q)).slice(0,20):items.slice(0,20);
+  if(!f.length){dd.classList.add('hidden');return}
+  dd.innerHTML=f.map(i=>`<div data-val="${i}" class="px-3 py-1.5 text-xs hover:bg-primary-50 cursor-pointer truncate">${i}</div>`).join('');
+  dd.classList.remove('hidden');
 }
 
-function exportCSV(){
-  const hdr=COLS.map(c=>c.label).join(',');
-  const rows=filtered.map(r=>COLS.map(c=>`"${(r[c.key]||'').replace(/"/g,'""')}"`).join(','));
-  const blob=new Blob(['\ufeff'+hdr+'\n'+rows.join('\n')],{type:'text/csv'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='permits_export.csv';a.click();
-}
+// URL state
+function updateURL(){const p=new URLSearchParams();const q=document.getElementById('search').value;if(q)p.set('q',q);const a=document.getElementById('architectFilter').value;if(a)p.set('architect',a);const g=document.getElementById('gushFilter').value;if(g)p.set('gush',g);const s=document.getElementById('streetFilter').value;if(s)p.set('street',s);history.replaceState(null,'',p.toString()?'?'+p:location.pathname)}
+function loadURL(){const p=new URLSearchParams(location.search);if(p.get('q'))document.getElementById('search').value=p.get('q');if(p.get('architect')){document.getElementById('architectFilter').value=p.get('architect');document.getElementById('archSearch').value=p.get('architect')}if(p.get('gush'))document.getElementById('gushFilter').value=p.get('gush');if(p.get('street')){document.getElementById('streetFilter').value=p.get('street');document.getElementById('streetSearch').value=p.get('street')}}
+
+function exportCSV(){const h=COLS.map(c=>c.label).join(',');const rows=filtered.map(r=>COLS.map(c=>`"${(r[c.key]||'').replace(/"/g,'""')}"`).join(','));const b=new Blob(['\ufeff'+h+'\n'+rows.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='permits_export.csv';a.click()}
 
 // Events
 document.getElementById('search').addEventListener('input',debounce(applyFilters,300));
-['yearFrom','yearTo','gushFilter','streetFilter','architectFilter'].forEach(id=>document.getElementById(id).addEventListener('change',applyFilters));
-['missingOnly','groupByAddress'].forEach(id=>document.getElementById(id).addEventListener('change',applyFilters));
+['yearFrom','yearTo','gushFilter'].forEach(id=>document.getElementById(id).addEventListener('change',applyFilters));
+['missingOnly','groupByAddress','privateOnly'].forEach(id=>document.getElementById(id).addEventListener('change',applyFilters));
 document.getElementById('exportBtn').addEventListener('click',exportCSV);
-document.getElementById('thead').addEventListener('click',e=>{
-  const th=e.target.closest('th');if(!th||!th.dataset.col)return;
-  if(sortCol===th.dataset.col)sortAsc=!sortAsc;else{sortCol=th.dataset.col;sortAsc=true}
-  applyFilters();
-});
-document.getElementById('pagination').addEventListener('click',e=>{
-  const btn=e.target.closest('button');if(!btn||btn.disabled||btn.dataset.p==null)return;
-  page=parseInt(btn.dataset.p);renderTable();renderPagination();
-  window.scrollTo({top:document.querySelector('.table-wrap').offsetTop-80,behavior:'smooth'});
-});
+document.getElementById('thead').addEventListener('click',e=>{const th=e.target.closest('th');if(!th||!th.dataset.col)return;if(sortCol===th.dataset.col)sortAsc=!sortAsc;else{sortCol=th.dataset.col;sortAsc=true}applyFilters()});
+document.getElementById('pagination').addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled||b.dataset.p==null)return;page=parseInt(b.dataset.p);renderTable();renderPagination();document.getElementById('mainTable').scrollIntoView({behavior:'smooth',block:'start'})});
 
-// Expand/collapse grouped rows
+// Expand rows
 document.getElementById('tbody').addEventListener('click',e=>{
-  const tr=e.target.closest('tr.group-row');if(!tr)return;
-  const idx=parseInt(tr.dataset.idx);
-  const rows=grouped[idx];if(!rows||rows.length<=1)return;
-  tr.classList.toggle('open');
+  const tr=e.target.closest('tr[data-idx]');if(!tr)return;
+  const idx=parseInt(tr.dataset.idx),rows=grouped[idx];if(!rows||rows.length<=1)return;
   const existing=document.querySelectorAll(`.sub-${idx}`);
   if(existing.length){existing.forEach(el=>el.remove());return}
   let html='';
-  rows.slice(1).forEach(r=>{html+=`<tr class="sub-row sub-${idx}">${renderCells(r)}</tr>`});
+  rows.slice(1).forEach(r=>{
+    html+=`<tr class="sub-${idx} bg-primary-50/30 fade-in">`;
+    html+=COLS.map(c=>{let v=r[c.key]||'';if(!v)return`<td class="px-3 py-2 text-slate-300 text-[11px]">—</td>`;if(isGarbage(v))return`<td class="px-3 py-2 text-red-300 text-[10px]">⚠</td>`;return`<td class="px-3 py-2 text-[11px] text-slate-600">${v.length>30?v.slice(0,30)+'…':v}</td>`}).join('');
+    const url=r.building_file_number?`https://nes.bartech-net.co.il/BuildingArchiveDetails?OrgEntityNumber=${r.building_file_number}&pageId=8575&DefinementEntityType=10&BuildingNum=${r.building_file_number}`:'';
+    html+=`<td class="px-3 py-2">${url?`<a href="${url}" target="_blank" class="text-primary-400 text-xs">📄</a>`:''}</td></tr>`;
+  });
   tr.insertAdjacentHTML('afterend',html);
 });
 
-// Architect chart click
+// Architect sidebar click
 document.getElementById('archChart').addEventListener('click',e=>{
-  const a=e.target.closest('.name');if(!a)return;
-  e.preventDefault();
-  const name=new URL(a.href).searchParams.get('architect');
+  const el=e.target.closest('[data-arch]');if(!el)return;
+  const name=el.dataset.arch;
   document.getElementById('architectFilter').value=name;
+  document.getElementById('archSearch').value=name;
   applyFilters();
-  window.scrollTo({top:0,behavior:'smooth'});
 });
 
 function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}}
 
-fetch('data/output.csv')
-  .then(r=>r.text())
-  .then(text=>{
-    document.getElementById('loading').style.display='none';
-    allRows=parseCSV(text);
-    initFilters();loadURL();applyFilters();
-  })
-  .catch(err=>{document.getElementById('loading').textContent='❌ שגיאה: '+err.message});
+// Init
+fetch('data/output.csv').then(r=>r.text()).then(text=>{
+  document.getElementById('loading').classList.add('hidden');
+  allRows=parseCSV(text);
+  initFilters();
+  setupCombo('streetSearch','streetFilter','streetDropdown',allStreets);
+  setupCombo('archSearch','architectFilter','archDropdown',allArchitects);
+  loadURL();applyFilters();
+}).catch(err=>{document.getElementById('loading').innerHTML=`<p class="text-red-500 text-sm">❌ ${err.message}</p>`});
 </script>
 </body>
 </html>

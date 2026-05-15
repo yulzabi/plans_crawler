@@ -320,11 +320,67 @@ async def update():
         await bc.close()
 
 
+def reocr():
+    """Re-OCR PDFs where owner or architect is missing. Updates CSV in place. Parallel."""
+    from concurrent.futures import ProcessPoolExecutor
+    from src.csv_writer import read_all, rewrite_all
+
+    rows = read_all()
+    if not rows:
+        print("No CSV data found.")
+        return
+
+    to_fix = [(i, r) for i, r in enumerate(rows) if not r.get("owner") or not r.get("architect")]
+    work = [(i, r["pdf_path"]) for i, r in to_fix if r.get("pdf_path") and Path(r["pdf_path"]).exists()]
+    print(f"🔍 Re-OCR: {len(work)} PDFs with missing data ({OCR_WORKERS} workers)")
+
+    with ProcessPoolExecutor(max_workers=OCR_WORKERS) as pool:
+        futures = {pool.submit(_reocr_one, p): i for i, (_, p) in enumerate(work)}
+        results = [None] * len(work)
+        done_count = 0
+        from concurrent.futures import as_completed
+        for future in as_completed(futures):
+            i = futures[future]
+            results[i] = future.result()
+            done_count += 1
+            if done_count % 10 == 0 or done_count == len(work):
+                print(f"  {done_count}/{len(work)} ({done_count*100//len(work)}%)", flush=True)
+
+    fixed = 0
+    for (idx, _), result in zip(work, results):
+        if not result:
+            continue
+        updated = False
+        for field in ("owner", "architect", "structural_planner", "gush", "helka", "migrash", "city_plan", "permit_number"):
+            new_val = result.get(field, "")
+            if new_val and not rows[idx].get(field):
+                rows[idx][field] = new_val
+                updated = True
+        if updated:
+            fixed += 1
+
+    rewrite_all(rows)
+    print(f"✓ Updated {fixed} records. CSV saved.")
+
+
+def _reocr_one(pdf_path: str) -> dict | None:
+    from PIL import Image as _Img
+    _Img.MAX_IMAGE_PIXELS = 1_500_000_000
+    try:
+        from src.pdf_processor import process_pdf as _process
+        record = _process(pdf_path)
+        return record.__dict__ if record else None
+    except Exception:
+        return None
+
+
 if __name__ == "__main__":
     if "--status" in sys.argv:
         show_status()
     elif "--fix" in sys.argv:
         fix_missing()
+    elif "--reocr" in sys.argv:
+        reocr()
     elif "--update" in sys.argv:
         asyncio.run(update())
     elif "--retry-errors" in sys.argv:
