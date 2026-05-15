@@ -305,7 +305,7 @@ def cleanup():
 async def fix_missing():
     """Interactive fix: open PDFs with missing data, prompt user, delete when complete."""
     import subprocess
-    from src.csv_writer import read_all, rewrite_all, COLUMNS
+    from src.csv_writer import read_all, rewrite_all
 
     rows = read_all()
     if not rows:
@@ -343,61 +343,120 @@ async def fix_missing():
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     await bc.download_pdf(d["url"], str(dest))
                     rows[idx]["pdf_path"] = str(dest)
-                    print(f"  ✓ Downloaded PDF for {row.get('address','?')}")
+                    print(f"  ✓ Downloaded: {row.get('address','?')}")
             except Exception as e:
                 print(f"  ⚠ Could not download for file {file_id}: {e}")
 
         await bc.close()
 
-    print(f"\n📝 {len(to_fix)} records to fix. Enter = skip field, 'q' = save & quit, 's' = skip record\n")
+    print(f"\n{'='*50}")
+    print(f"📝 Manual Fix Mode — {len(to_fix)} records to review")
+    print(f"   Commands: Enter=skip field | s=skip record | q=save & quit")
+    print(f"{'='*50}\n")
 
+    FIELDS_TO_FIX = ["owner", "architect"]
     fixed = 0
-    for idx, row in to_fix:
-        pdf = row.get("pdf_path", "")
-        addr = row.get("address", "?")
-        print(f"[{fixed+1}/{len(to_fix)}] {row.get('building_file_number','?')}: {addr}")
-        print(f"  owner: {row.get('owner','') or '—'}")
-        print(f"  architect: {row.get('architect','') or '—'}")
 
-        if pdf and Path(pdf).exists():
-            subprocess.Popen(["open", pdf], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-            print(f"  ⚠ No PDF available")
+    try:
+        for idx, row in to_fix:
+            addr = row.get("address", "?")
+            file_id = row.get("building_file_number", "?")
+            pdf = row.get("pdf_path", "")
 
-        # Prompt for missing fields
-        quit_flag = False
-        for field in ("owner", "architect", "structural_planner", "address", "gush", "helka", "permit_number", "city_plan"):
-            current = row.get(field, "")
-            if _is_valid_field(current) and field not in ("owner", "architect"):
+            print(f"┌─ [{fixed+1}/{len(to_fix)}] תיק {file_id} — {addr}")
+            print(f"│  תאריך: {row.get('date', '?')}  |  גוש: {row.get('gush', '?')}  |  חלקה: {row.get('helka', '?')}")
+            print(f"│  בעל היתר: {row.get('owner', '') or '❌ חסר'}")
+            print(f"│  אדריכל: {row.get('architect', '') or '❌ חסר'}")
+
+            # Ask before opening PDF
+            has_pdf = pdf and Path(pdf).exists()
+            try:
+                action = input(f"│  [Enter=פתח PDF | s=דלג | q=שמור וצא]: ").strip().lower()
+            except EOFError:
+                action = ""
+
+            if action == "q":
+                rewrite_all(rows)
+                print(f"\n✓ Saved. Fixed {fixed} records.")
+                return
+            if action == "s":
+                print(f"└─ ⏭ דילוג\n")
                 continue
-            val = input(f"  {field} [{current}]: ").strip()
-            if val == "q":
-                quit_flag = True
-                break
-            if val == "s":
-                break
-            if val:
-                rows[idx][field] = val
 
-        if quit_flag:
-            rewrite_all(rows)
-            print(f"\n✓ Saved. Fixed {fixed} records.")
-            return
+            # Open PDF
+            if has_pdf:
+                subprocess.Popen(["open", pdf], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print(f"│  📄 PDF נפתח")
+            else:
+                print(f"│  ⚠ אין PDF זמין")
 
-        # If now complete, delete the PDF
-        if _is_complete(rows[idx]):
-            if pdf and Path(pdf).exists():
-                Path(pdf).unlink()
-                parent = Path(pdf).parent
-                if parent.exists() and not any(parent.iterdir()):
-                    parent.rmdir()
-                print(f"  🗑 PDF deleted (record complete)")
+            print(f"│")
 
-        fixed += 1
-        print()
+            # Collect inputs
+            skip_record = False
+            edits = {}
+            for field in FIELDS_TO_FIX:
+                current = row.get(field, "")
+                if _is_valid_field(current):
+                    continue
+                label = "בעל היתר" if field == "owner" else "אדריכל"
+                try:
+                    val = input(f"│  ✏️  {label} [{current or '—'}]: ").strip()
+                except EOFError:
+                    break
+                if val == "q":
+                    rewrite_all(rows)
+                    print(f"\n✓ Saved. Fixed {fixed} records.")
+                    return
+                if val == "s":
+                    skip_record = True
+                    break
+                if val:
+                    edits[field] = val
+
+            if skip_record:
+                print(f"└─ ⏭ דילוג\n")
+                continue
+
+            if not edits:
+                print(f"└─ ⏭ ללא שינוי\n")
+                continue
+
+            # Show summary and confirm
+            print(f"│")
+            print(f"│  📋 סיכום שינויים:")
+            for field, val in edits.items():
+                label = "בעל היתר" if field == "owner" else "אדריכל"
+                print(f"│     {label}: {val}")
+
+            try:
+                confirm = input(f"│  💾 לשמור? (y/n) [y]: ").strip().lower()
+            except EOFError:
+                confirm = "y"
+
+            if confirm in ("", "y", "כ"):
+                for field, val in edits.items():
+                    rows[idx][field] = val
+                fixed += 1
+
+                # Delete PDF if now complete
+                if _is_complete(rows[idx]) and pdf and Path(pdf).exists():
+                    Path(pdf).unlink()
+                    parent = Path(pdf).parent
+                    if parent.exists() and not any(parent.iterdir()):
+                        parent.rmdir()
+                    print(f"└─ ✓ נשמר + PDF נמחק\n")
+                else:
+                    print(f"└─ ✓ נשמר\n")
+            else:
+                print(f"└─ ✗ בוטל\n")
+
+    except KeyboardInterrupt:
+        print(f"\n\n🛑 נעצר.")
 
     rewrite_all(rows)
-    print(f"✓ Done. Fixed {fixed} records. CSV updated.")
+    print(f"\n{'='*50}")
+    print(f"✓ סיום. תוקנו {fixed} רשומות. CSV עודכן.")
 
 
 async def update():
