@@ -11,7 +11,6 @@ from PIL import Image
 Image.MAX_IMAGE_PIXELS = 1_500_000_000  # ~1.5B pixels, covers large A0 scans
 
 from src.state import StateManager
-from src.browser import BrowserController, BlockedError
 from src.pdf_processor import process_pdf
 from src.csv_writer import append_record, write_header, CSV_PATH, COLUMNS, read_all, rewrite_all
 
@@ -80,28 +79,35 @@ def _ocr_one(args: tuple) -> dict | None:
     """Worker function for parallel OCR. Runs in a subprocess."""
     from PIL import Image as _Img
     _Img.MAX_IMAGE_PIXELS = 1_500_000_000
-    pdf_path, file_id, address, date, city_name = args
+    pdf_path, file_id, address, date, city_name, mode = args if len(args) == 6 else (*args, "local")
+    if mode == "skip":
+        return None
     try:
         from src.pdf_processor import process_pdf as _process
-        record = _process(pdf_path)
+        result = _process(pdf_path, mode=mode)
+        record, confidence = result if isinstance(result, tuple) else (result, None)
         if record:
             record.city = city_name
             record.building_file_number = file_id
             record.date = date
             if not record.address:
                 record.address = address
-            return record.__dict__
+            out = record.__dict__
+            if confidence:
+                out["_confidence"] = confidence
+            return out
     except Exception as e:
         return {"_error": str(e), "pdf_path": pdf_path}
     return None
 
 
-async def crawl(retry_errors: bool = False):
+async def crawl(retry_errors: bool = False, ocr_mode: str = "local"):
     global _shutdown
     city = _get_city()
     city_csv = _city_csv(city)
     city_pdfs = _city_pdf_dir(city)
     state = StateManager(path=_city_state(city))
+    from src.browser import BrowserController, BlockedError
     bc = BrowserController(subdomain=city)
 
     print(f"🏙 City: {city} | CSV: {city_csv}")
@@ -156,7 +162,7 @@ async def crawl(retry_errors: bool = False):
         async def queue_if_needed(pdf_path, file_id, address, date):
             """Only queue for OCR if not already in CSV."""
             if pdf_path not in existing_pdfs:
-                await ocr_queue.put((pdf_path, file_id, address, date, city))
+                await ocr_queue.put((pdf_path, file_id, address, date, city, ocr_mode))
 
         # Enqueue already-downloaded files from previous interrupted run
         if already_downloaded:
@@ -165,7 +171,7 @@ async def crawl(retry_errors: bool = False):
                 for i, pdf in enumerate(entry.pdfs):
                     date = entry.doc_meta[i]["date"] if i < len(entry.doc_meta) else ""
                     if pdf not in existing_pdfs:
-                        await ocr_queue.put((pdf, file_id, entry.address, date, city))
+                        await ocr_queue.put((pdf, file_id, entry.address, date, city, ocr_mode))
                         queued += 1
             if queued:
                 print(f"  ↻ {queued} PDFs from previous run need OCR")
@@ -241,7 +247,7 @@ async def crawl(retry_errors: bool = False):
                         dm = {"date": doc_info.get("date", ""), "entity_number": doc_info.get("entity_number", "")}
                         meta.append(dm)
                         # Feed to OCR queue immediately
-                        await ocr_queue.put((str(dest), file_id, entry.address, dm["date"], city))
+                        await ocr_queue.put((str(dest), file_id, entry.address, dm["date"], city, ocr_mode))
                     except Exception as e:
                         print(f"⚠dl:{e}", end=" ")
 
@@ -369,6 +375,7 @@ async def fix_missing():
     bc = None
     if needs_download:
         print(f"📥 {len(needs_download)} PDFs need re-downloading. Launching browser...")
+        from src.browser import BrowserController
         bc = BrowserController()
         await bc.launch()
 
@@ -508,6 +515,7 @@ async def fix_missing():
 async def update():
     """Re-fetch the file list and only process new entries."""
     state = StateManager()
+    from src.browser import BrowserController
     bc = BrowserController()
 
     try:
@@ -584,7 +592,8 @@ def _reocr_one(pdf_path: str) -> dict | None:
     _Img.MAX_IMAGE_PIXELS = 1_500_000_000
     try:
         from src.pdf_processor import process_pdf as _process
-        record = _process(pdf_path)
+        result = _process(pdf_path, mode="cloud")
+        record, _ = result if isinstance(result, tuple) else (result, None)
         return record.__dict__ if record else None
     except Exception:
         return None
@@ -628,6 +637,15 @@ def merge_csvs():
 
 
 if __name__ == "__main__":
+    # Parse --mode flag (cloud|local|skip|tesseract)
+    ocr_mode = "local"
+    model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    for i, arg in enumerate(sys.argv):
+        if arg == "--mode" and i + 1 < len(sys.argv):
+            ocr_mode = sys.argv[i + 1]
+        if arg == "--model" and i + 1 < len(sys.argv):
+            model_id = sys.argv[i + 1]
+
     if "--status" in sys.argv:
         show_status()
     elif "--fix" in sys.argv:
@@ -636,6 +654,46 @@ if __name__ == "__main__":
         cleanup()
     elif "--reocr" in sys.argv:
         reocr()
+    elif "--batch" in sys.argv:
+        # Batch mode: prepare all PDFs and submit to Bedrock batch inference
+        from src.batch_processor import run_batch
+        from src.pdf_processor import find_permit_pages
+        city = _get_city()
+        city_csv = _city_csv(city)
+        city_pdfs = _city_pdf_dir(city)
+        pdf_paths = [str(p) for p in Path(city_pdfs).rglob("*.pdf")]
+
+        if not pdf_paths:
+            print(f"❌ No PDFs found in {city_pdfs}")
+            print("  Run 'python -m src.main' first to crawl and download PDFs.")
+            sys.exit(1)
+
+        # Filter to PDFs with permit pages
+        valid_pdfs = [p for p in pdf_paths if find_permit_pages(p)]
+        print(f"📋 Found {len(pdf_paths)} PDFs, {len(valid_pdfs)} have permit pages (A4)")
+        if not valid_pdfs:
+            print("❌ No PDFs with A4 permit pages found.")
+            sys.exit(1)
+
+        batch_idx = sys.argv.index("--batch")
+        role_arn = sys.argv[batch_idx + 1] if batch_idx + 1 < len(sys.argv) else None
+        if not role_arn or role_arn.startswith("--"):
+            print("Usage: --batch <IAM_ROLE_ARN>")
+            print(f"  Example: --batch arn:aws:iam::086541416368:role/BedrockBatchInferenceRole")
+            sys.exit(1)
+
+        cost_est = len(valid_pdfs) * 0.006
+        print(f"💰 Estimated cost: ~${cost_est:.2f} ({len(valid_pdfs)} pages × $0.006)")
+        confirm = input("Submit batch job? [y/N] ").strip().lower()
+        if confirm != "y":
+            print("Cancelled.")
+            sys.exit(0)
+
+        results = run_batch(valid_pdfs, role_arn, model_id=model_id)
+        for pdf_path, record, confidence in results:
+            record.city = city
+            append_record(record, path=city_csv, confidence=confidence)
+        print(f"✓ Wrote {len(results)} records to {city_csv}")
     elif "--update" in sys.argv:
         asyncio.run(update())
     elif "--cities" in sys.argv:
@@ -643,6 +701,6 @@ if __name__ == "__main__":
     elif "--merge" in sys.argv:
         merge_csvs()
     elif "--retry-errors" in sys.argv:
-        asyncio.run(crawl(retry_errors=True))
+        asyncio.run(crawl(retry_errors=True, ocr_mode=ocr_mode))
     else:
-        asyncio.run(crawl())
+        asyncio.run(crawl(ocr_mode=ocr_mode))
