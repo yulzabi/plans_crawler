@@ -690,10 +690,15 @@ if __name__ == "__main__":
             sys.exit(0)
 
         results = run_batch(valid_pdfs, role_arn, model_id=model_id)
+        existing = {r.get("pdf_path") for r in read_all(city_csv)} if city_csv.exists() else set()
+        written = 0
         for pdf_path, record, confidence in results:
+            if record.pdf_path in existing:
+                continue
             record.city = city
             append_record(record, path=city_csv, confidence=confidence)
-        print(f"✓ Wrote {len(results)} records to {city_csv}")
+            written += 1
+        print(f"✓ Wrote {written} new records to {city_csv} ({len(results) - written} skipped as duplicates)")
     elif "--update" in sys.argv:
         asyncio.run(update())
     elif "--cities" in sys.argv:
@@ -703,4 +708,22 @@ if __name__ == "__main__":
     elif "--retry-errors" in sys.argv:
         asyncio.run(crawl(retry_errors=True, ocr_mode=ocr_mode))
     else:
+        # Check for unknown flags
+        known = {"--mode", "--model", "--city", "--status", "--fix", "--cleanup",
+                 "--reocr", "--batch", "--update", "--cities", "--merge", "--retry-errors"}
+        unknown = [a for a in sys.argv[1:] if a.startswith("--") and a not in known]
+        if unknown:
+            print(f"❌ Unknown flag: {unknown[0]}")
+            print("\nUsage: python -m src.main [OPTIONS]")
+            print("  --mode cloud|local|skip|tesseract  OCR mode (default: local)")
+            print("  --model MODEL_ID                   Bedrock model ID")
+            print("  --batch ROLE_ARN                   Batch inference via S3")
+            print("  --reocr                            Re-OCR PDFs with missing data")
+            print("  --fix                              Interactive fix for incomplete records")
+            print("  --cleanup                          Delete PDFs for complete records")
+            print("  --status                           Show crawl status")
+            print("  --retry-errors                     Retry failed downloads")
+            print("  --cities                           List configured cities")
+            print("  --merge                            Merge all city CSVs")
+            sys.exit(1)
         asyncio.run(crawl(ocr_mode=ocr_mode))

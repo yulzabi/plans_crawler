@@ -186,4 +186,18 @@ def run_batch(pdf_paths: list[str], role_arn: str, region: str = "us-east-1", mo
     print(f"✅ Parsing results...")
     results = processor.parse_results(job_arn)
     print(f"📊 Got {len(results)} results")
+
+    # Cleanup S3 batch data
+    try:
+        resp = processor.s3.list_objects_v2(Bucket=processor.bucket)
+        objects = resp.get("Contents", [])
+        if objects:
+            processor.s3.delete_objects(
+                Bucket=processor.bucket,
+                Delete={"Objects": [{"Key": o["Key"]} for o in objects]}
+            )
+            logger.info(f"Cleaned up {len(objects)} S3 objects")
+    except Exception as e:
+        logger.warning(f"S3 cleanup failed: {e}")
+
     return results
